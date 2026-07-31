@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>sc-friends — revue</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f1720;
+    --bg-panel: #16212c;
+    --bg-row: #1b2836;
+    --bg-row-alt: #182430;
+    --border: #26374a;
+    --text: #dbe6f0;
+    --text-dim: #7f92a3;
+    --accent: #3fa9f5;
+    --keep: #3fbf6b;
+    --remove: #e5484d;
+    --applied: #9a6bd6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 16px 24px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .summary { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); }
+  .summary b { color: var(--text); }
+  .pill { padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .pill.keep { background: rgba(63,191,107,0.15); color: var(--keep); }
+  .pill.remove { background: rgba(229,72,77,0.15); color: var(--remove); }
+  .pill.undecided { background: rgba(127,146,163,0.15); color: var(--text-dim); }
+  .pill.applied { background: rgba(154,107,214,0.15); color: var(--applied); }
+
+  .toolbar {
+    padding: 12px 24px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  input, select, button {
+    background: var(--bg-row);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  input[type=text] { min-width: 220px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #06202f; font-weight: 600; border-color: var(--accent); }
+  .bulk { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .bulk .count { color: var(--text-dim); font-size: 12px; }
+
+  main { padding: 16px 24px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 8px 10px; color: var(--text-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; cursor: pointer; user-select: none; }
+  th:hover { color: var(--text); }
+  td { padding: 8px 10px; border-top: 1px solid var(--border); vertical-align: middle; }
+  tr:nth-child(even) td { background: var(--bg-row-alt); }
+  tr.applied td { opacity: 0.55; }
+  .friend { display: flex; align-items: center; gap: 8px; }
+  .friend img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: var(--bg-row); }
+  .nickname { font-weight: 600; }
+  .displayname { color: var(--text-dim); font-size: 12px; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-online, .status-playing { background: var(--keep); }
+  .status-away { background: #e5b800; }
+  .status-offline { background: var(--text-dim); }
+  .actions { display: flex; gap: 6px; }
+  .actions button { padding: 4px 10px; font-size: 12px; }
+  .actions button.active-keep { background: var(--keep); color: #06210f; border-color: var(--keep); }
+  .actions button.active-remove { background: var(--remove); color: #310506; border-color: var(--remove); }
+  .applied-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .applied-badge.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
+  .applied-badge.fail { background: rgba(229,72,77,0.15); color: var(--remove); }
+
+  .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; justify-content: center; color: var(--text-dim); }
+  footer { padding: 16px 24px; color: var(--text-dim); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>sc-friends</h1>
+  <div class="summary" id="summary">Chargement…</div>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Chercher un pseudo…" />
+  <select id="decisionFilter">
+    <option value="all">Toutes décisions</option>
+    <option value="undecided">Indécis</option>
+    <option value="keep">Garder</option>
+    <option value="remove">Retirer</option>
+  </select>
+  <select id="statusFilter">
+    <option value="all">Tous statuts</option>
+    <option value="online">En ligne</option>
+    <option value="playing">En jeu</option>
+    <option value="away">Absent</option>
+    <option value="offline">Hors-ligne</option>
+  </select>
+  <select id="sort">
+    <option value="presence_since">Trier: dernière connexion</option>
+    <option value="nickname">Trier: pseudo</option>
+    <option value="displayname">Trier: nom affiché</option>
+    <option value="common_communities_count">Trier: orgs communes</option>
+  </select>
+  <button id="orderBtn" title="Inverser l'ordre">↑ asc</button>
+
+  <div class="bulk">
+    <span class="count" id="matchCount"></span>
+    <button id="bulkKeep">Marquer filtrés: Garder</button>
+    <button id="bulkRemove">Marquer filtrés: Retirer</button>
+    <button id="bulkClear">Marquer filtrés: Indécis</button>
+  </div>
+</div>
+
+<main>
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Statut</th>
+        <th>Dernière connexion</th>
+        <th>Orgs communes</th>
+        <th>Décision</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="pagination">
+    <button id="prevPage">← Précédent</button>
+    <span id="pageInfo"></span>
+    <button id="nextPage">Suivant →</button>
+  </div>
+</main>
+
+<footer>
+  Cette page ne touche que la base locale (colonne <code>decision</code>). Aucune suppression réelle n'a lieu ici —
+  ça se fait ensuite via <code>node apply-removals.js --confirm</code>.
+</footer>
+
+<script>
+const state = { search: '', decision: 'all', status: 'all', sort: 'presence_since', order: 'asc', page: 1, pageSize: 50 };
+
+const el = (id) => document.getElementById(id);
+
+function fmtDate(unixSeconds) {
+  if (!unixSeconds) return '<span style="color:var(--text-dim)">inconnu</span>';
+  const d = new Date(unixSeconds * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
+async function loadSummary() {
+  const res = await fetch('/api/summary');
+  const rows = await res.json();
+  const counts = { keep: 0, remove: 0, undecided: 0, applied: 0, total: 0 };
+  for (const r of rows) {
+    counts.total += r.n;
+    if (r.applied) counts.applied += r.n;
+    else counts[r.decision] = (counts[r.decision] || 0) + r.n;
+  }
+  el('summary').innerHTML = `
+    <span><b>${counts.total}</b> amis au total</span>
+    <span class="pill undecided">${counts.undecided || 0} indécis</span>
+    <span class="pill keep">${counts.keep || 0} garder</span>
+    <span class="pill remove">${counts.remove || 0} retirer</span>
+    <span class="pill applied">${counts.applied || 0} déjà appliqués</span>
+  `;
+}
+
+function buildQuery(extra) {
+  const p = new URLSearchParams({
+    search: state.search, decision: state.decision, status: state.status,
+    sort: state.sort, order: state.order, page: state.page, pageSize: state.pageSize,
+    ...extra,
+  });
+  return p.toString();
+}
+
+async function loadRows() {
+  const res = await fetch('/api/friends?' + buildQuery());
+  const { total, rows } = await res.json();
+  el('matchCount').textContent = `${total} correspondance(s)`;
+  el('pageInfo').textContent = `Page ${state.page} / ${Math.max(1, Math.ceil(total / state.pageSize))} (${total} résultats)`;
+
+  el('rows').innerHTML = rows.map((f) => {
+    const applied = !!f.applied_at;
+    const rowCls = applied ? 'applied' : '';
+    const badge = applied
+      ? `<span class="applied-badge ${f.apply_success ? 'ok' : 'fail'}">${f.apply_success ? 'Appliqué ✓' : 'Échec ✗'}</span>`
+      : `<div class="actions">
+          <button data-id="${f.id}" data-set="keep" class="${f.decision === 'keep' ? 'active-keep' : ''}">Garder</button>
+          <button data-id="${f.id}" data-set="remove" class="${f.decision === 'remove' ? 'active-remove' : ''}">Retirer</button>
+          <button data-id="${f.id}" data-set="">Indécis</button>
+        </div>`;
+    return `
+      <tr class="${rowCls}">
+        <td><div class="friend">
+          <img src="${f.avatar || ''}" onerror="this.style.visibility='hidden'" />
+          <div><div class="nickname">${escapeHtml(f.nickname)}</div><div class="displayname">${escapeHtml(f.displayname)}</div></div>
+        </div></td>
+        <td><span class="status-dot status-${f.presence_status || 'offline'}"></span>${f.presence_status || '?'}</td>
+        <td>${fmtDate(f.presence_since)}</td>
+        <td>${f.common_communities_count}</td>
+        <td>${badge}</td>
+      </tr>`;
+  }).join('');
+
+  el('rows').querySelectorAll('button[data-id]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const setTo = btn.dataset.set || null;
+      await fetch(`/api/friends/${encodeURIComponent(id)}/decision`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: setTo }),
+      });
+      loadRows();
+      loadSummary();
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+el('search').addEventListener('input', debounce(() => { state.search = el('search').value; state.page = 1; loadRows(); }, 300));
+el('decisionFilter').addEventListener('change', () => { state.decision = el('decisionFilter').value; state.page = 1; loadRows(); });
+el('statusFilter').addEventListener('change', () => { state.status = el('statusFilter').value; state.page = 1; loadRows(); });
+el('sort').addEventListener('change', () => { state.sort = el('sort').value; loadRows(); });
+el('orderBtn').addEventListener('click', () => {
+  state.order = state.order === 'asc' ? 'desc' : 'asc';
+  el('orderBtn').textContent = state.order === 'asc' ? '↑ asc' : '↓ desc';
+  loadRows();
+});
+el('prevPage').addEventListener('click', () => { if (state.page > 1) { state.page--; loadRows(); } });
+el('nextPage').addEventListener('click', () => { state.page++; loadRows(); });
+
+async function bulkSet(setTo) {
+  const label = setTo === 'keep' ? 'Garder' : setTo === 'remove' ? 'Retirer' : 'Indécis';
+  if (!confirm(`Marquer TOUS les résultats filtrés actuels (${el('matchCount').textContent}) comme "${label}" ?`)) return;
+  const res = await fetch('/api/bulk-decision', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ search: state.search, decision: state.decision, status: state.status, setTo }),
+  });
+  const data = await res.json();
+  alert(`${data.updated} ami(s) mis à jour.`);
+  loadRows();
+  loadSummary();
+}
+el('bulkKeep').addEventListener('click', () => bulkSet('keep'));
+el('bulkRemove').addEventListener('click', () => bulkSet('remove'));
+el('bulkClear').addEventListener('click', () => bulkSet(null));
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+loadSummary();
+loadRows();
+</script>
+</body>
+</html>

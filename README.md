@@ -94,6 +94,25 @@ node mark-candidates.js --reset                # remet tout à NULL (hors amis d
 node mark-candidates.js --keep <id>             # force un ami précis en 'keep'
 ```
 
+### Interface web locale (`server.js`)
+
+Alternative visuelle à `mark-candidates.js` : une petite appli web (recherche,
+filtres, tri, décision par ami ou par lot filtré), branchée en direct sur
+`friends.db`. Elle ne fait que lire/écrire la colonne `decision` en local —
+**aucune suppression réelle n'y est déclenchable**, ça reste une action
+volontaire en ligne de commande (`apply-removals.js --confirm`).
+
+```bash
+node server.js
+```
+
+Le serveur écoute uniquement en local (`127.0.0.1:3939`). Depuis une autre
+machine, ouvre un tunnel SSH puis va sur `http://localhost:3939` :
+
+```bash
+ssh -L 3939:localhost:3939 <user>@<host>
+```
+
 Tu peux aussi éditer `friends.db` directement en SQL pour affiner :
 
 ```bash

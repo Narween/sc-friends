@@ -8,7 +8,8 @@
     "fetch": "node fetch-friends.js",
     "import": "node import-friends.js",
     "mark": "node mark-candidates.js",
-    "apply": "node apply-removals.js"
+    "apply": "node apply-removals.js",
+    "serve": "node server.js"
   },
   "dependencies": {
     "playwright": "^1.62.1"
