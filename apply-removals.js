@@ -1,26 +1,38 @@
 // Applique réellement sur Spectrum les décisions decision='remove' prises
 // localement dans friends.db. SANS --confirm : dry-run, aucun appel réseau,
-// juste la liste de ce qui serait supprimé. Idempotent : chaque ligne traitée
-// est marquée applied_at immédiatement, donc une exécution interrompue peut
-// être relancée sans re-supprimer les mêmes amis.
+// juste la liste de ce qui serait supprimé.
+//
+// Fonctionne en pilotant la VRAIE page de gestion des amis
+// (https://.../spectrum/settings/friends : recherche + bouton UNFRIEND par
+// ligne), pas en rejouant l'appel API à la main : Spectrum protège cet appel
+// avec un header anti-bot (x-rsi-token) calculé par son propre bundle JS
+// interne, qu'on ne peut pas reproduire nous-mêmes sans contourner cette
+// protection. En cliquant le vrai bouton, ce header est posé naturellement
+// par le code du site.
+//
+// Idempotent : chaque ligne traitée est marquée applied_at immédiatement,
+// donc une exécution interrompue peut être relancée sans risquer de
+// re-supprimer les mêmes amis.
 //
 // Usage :
 //   node apply-removals.js                 (dry-run)
 //   node apply-removals.js --confirm       (exécute réellement)
+//   node apply-removals.js --confirm --limit 3   (teste sur un petit lot avant le reste)
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
 
 const AUTH_FILE = 'auth.json';
-const START_URL = 'https://robertsspaceindustries.com/spectrum';
-const DELAY_MS = 1500;
+const FRIENDS_SETTINGS_URL = 'https://robertsspaceindustries.com/spectrum/settings/friends';
+const DELAY_MS = 2000;
 
 function parseArgs(argv) {
-  const args = { db: 'friends.db', confirm: false };
+  const args = { db: 'friends.db', confirm: false, limit: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--db') args.db = argv[++i];
     else if (a === '--confirm') args.confirm = true;
+    else if (a === '--limit') args.limit = Number(argv[++i]);
   }
   return args;
 }
@@ -41,7 +53,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  const pending = sqlJson(args.db, `SELECT id, nickname FROM friends WHERE decision='remove' AND applied_at IS NULL;`);
+  const limitClause = args.limit ? ` LIMIT ${args.limit}` : '';
+  const pending = sqlJson(args.db, `SELECT id, nickname, displayname FROM friends WHERE decision='remove' AND applied_at IS NULL ORDER BY id${limitClause};`);
 
   console.log(`${pending.length} ami(s) marqué(s) 'remove' et pas encore appliqué(s) :`);
   pending.forEach((f) => console.log(`  - ${f.nickname} [id=${f.id}]`));
@@ -62,38 +75,48 @@ async function main() {
   console.log(`\n--confirm passé : suppression réelle de ${pending.length} ami(s), pause ${DELAY_MS}ms entre chaque appel.\n`);
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ storageState: AUTH_FILE });
+  const context = await browser.newContext({ storageState: AUTH_FILE, viewport: { width: 1600, height: 1000 } });
   const page = await context.newPage();
 
-  await Promise.all([
-    page.waitForResponse((res) => res.url().includes('/api/spectrum/auth/identify'), { timeout: 30000 }),
-    page.goto(START_URL, { waitUntil: 'domcontentloaded' }),
-  ]);
+  await page.goto(FRIENDS_SETTINGS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const filterInput = await page.waitForSelector('input[placeholder="Filter friends"]', { timeout: 30000 });
 
   let okCount = 0;
   for (const friend of pending) {
-    let result;
-    try {
-      result = await page.evaluate(async (memberId) => {
-        const res = await fetch('/api/spectrum/friend/remove', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ member_id: memberId }),
-        });
-        return { status: res.status, body: await res.json().catch(() => null) };
-      }, friend.id);
-    } catch (err) {
-      result = { status: null, body: null, error: String(err) };
+    let ok = false;
+    let detail = null;
+
+    // Le champ de recherche de la page filtre sur le displayname ("Name"),
+    // pas sur le nickname ("Handle") — les deux peuvent différer.
+    await filterInput.fill(friend.displayname);
+    await sleep(1800);
+
+    const row = page.locator('.table-row').filter({ hasText: friend.displayname }).filter({ hasText: friend.nickname });
+    const rowCount = await row.count();
+
+    if (rowCount !== 1) {
+      detail = `ligne ambiguë ou introuvable (${rowCount} correspondance(s))`;
+    } else {
+      const unfriendBtn = row.locator('.table-cell.action');
+      try {
+        const [response] = await Promise.all([
+          page.waitForResponse((res) => res.url().includes('/api/spectrum/friend/remove'), { timeout: 10000 }),
+          unfriendBtn.click(),
+        ]);
+        const body = await response.json().catch(() => null);
+        ok = body?.success === 1;
+        detail = JSON.stringify(body);
+      } catch (err) {
+        detail = String(err);
+      }
     }
 
-    const ok = result.body?.success === 1;
     if (ok) okCount++;
-    console.log(`${ok ? 'OK  ' : 'FAIL'} ${friend.nickname} [id=${friend.id}] -> HTTP ${result.status} ${JSON.stringify(result.body)}`);
+    console.log(`${ok ? 'OK  ' : 'FAIL'} ${friend.nickname} [id=${friend.id}] -> ${detail}`);
 
     sqlExec(
       args.db,
-      `UPDATE friends SET applied_at=CURRENT_TIMESTAMP, apply_success=${ok ? 1 : 0}, apply_response='${esc(JSON.stringify(result.body ?? result.error ?? null))}' WHERE id='${esc(friend.id)}';`
+      `UPDATE friends SET applied_at=CURRENT_TIMESTAMP, apply_success=${ok ? 1 : 0}, apply_response='${esc(detail)}' WHERE id='${esc(friend.id)}';`
     );
 
     await sleep(DELAY_MS);
