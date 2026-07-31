@@ -250,6 +250,14 @@ const server = http.createServer(async (req, res) => {
   res.end('Not found');
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Le port ${PORT} est déjà utilisé par un autre processus (une autre instance de l'appli, ou un autre programme). Ferme-le puis relance.`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Interface locale : http://127.0.0.1:${PORT}`);
   console.log(`Depuis une autre machine : ssh -L ${PORT}:localhost:${PORT} <user>@<host>  puis ouvre http://localhost:${PORT}`);
