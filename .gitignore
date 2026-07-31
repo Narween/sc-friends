@@ -1,0 +1,17 @@
+node_modules/
+
+# Données personnelles / secrets — ne jamais committer
+auth.json
+friends.json
+friends.db
+friends.db-journal
+network-capture.json
+friends.candidate.json
+candidates*.json
+remove-log*.json
+
+# Fichiers de synchronisation internes aux scripts
+.login-done.signal
+.discover-done.signal
+
+.claude/

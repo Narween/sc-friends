@@ -1,0 +1,16 @@
+{
+  "name": "sc-friends",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "login": "node login.js",
+    "discover": "node discover-friends.js",
+    "fetch": "node fetch-friends.js",
+    "import": "node import-friends.js",
+    "mark": "node mark-candidates.js",
+    "apply": "node apply-removals.js"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}
