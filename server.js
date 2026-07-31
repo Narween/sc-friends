@@ -12,6 +12,7 @@ const { AUTH_FILE, FRIENDS_JSON_FILE, DB_FILE, LOGIN_SIGNAL_FILE } = require('./
 const PORT = Number(process.env.PORT || 3939);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ALLOWED_SORT = ['presence_since', 'nickname', 'displayname', 'common_communities_count', 'applied_at'];
+const PKG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
 const TASKS = {
   login: { script: 'login.js' },
@@ -90,6 +91,16 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/') {
     return serveStatic(res, path.join(PUBLIC_DIR, 'index.html'), 'text/html; charset=utf-8');
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/about') {
+    return sendJson(res, 200, {
+      name: PKG.name,
+      productName: 'SC Friends',
+      version: PKG.version,
+      description: PKG.description,
+      repository: 'https://github.com/Narween/sc-friends',
+    });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/status') {

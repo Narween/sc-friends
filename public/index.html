@@ -149,8 +149,15 @@
       <button id="themeLight" data-theme-choice="light" title="Clair / Light">☀</button>
     </div>
     <button id="toggleSetup" data-i18n="setup.toggle"></button>
+    <button id="toggleAbout" data-i18n="about.toggle"></button>
   </div>
 </header>
+
+<section class="panel" id="aboutPanel" style="display:none">
+  <h2 data-i18n="about.title"></h2>
+  <p class="dim" id="aboutBody">…</p>
+  <p class="dim" data-i18n="about.disclaimer"></p>
+</section>
 
 <section class="panel" id="setupPanel" style="display:none">
   <h2 data-i18n="setup.title"></h2>
@@ -253,6 +260,9 @@
 const translations = {
   fr: {
     'setup.toggle': '⚙ Remplir la base',
+    'about.toggle': 'ℹ À propos',
+    'about.title': 'À propos de sc-friends',
+    'about.disclaimer': 'Outil non-officiel, sans aucun lien avec Cloud Imperium Games / Roberts Space Industries. Fourni tel quel, à utiliser sous ta propre responsabilité — la suppression d\'un ami reste visible pour la personne concernée.',
     'setup.title': 'Comment remplir / rafraîchir friends.db',
     'setup.intro': 'Chaque étape lance un vrai script. L\'étape 1 ouvre un vrai navigateur : connecte-toi normalement (2FA compris), puis clique "Je suis connecté".',
     'setup.step1.title': 'Connexion',
@@ -301,6 +311,9 @@ const translations = {
   },
   en: {
     'setup.toggle': '⚙ Populate database',
+    'about.toggle': 'ℹ About',
+    'about.title': 'About sc-friends',
+    'about.disclaimer': 'Unofficial tool, not affiliated with Cloud Imperium Games / Roberts Space Industries in any way. Provided as-is, use at your own risk — removing a friend stays visible to that person.',
     'setup.title': 'How to populate / refresh friends.db',
     'setup.intro': 'Each step runs a real script. Step 1 opens a real browser: log in normally (2FA included), then click "I\'m logged in".',
     'setup.step1.title': 'Login',
@@ -516,6 +529,23 @@ el('toggleSetup').addEventListener('click', () => {
   panel.style.display = show ? 'block' : 'none';
   if (show) loadStatus();
 });
+
+// --- Panneau "à propos" ---
+let aboutData = null;
+el('toggleAbout').addEventListener('click', async () => {
+  const panel = el('aboutPanel');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) {
+    if (!aboutData) aboutData = await (await fetch('/api/about')).json();
+    renderAbout();
+  }
+});
+function renderAbout() {
+  if (!aboutData) return;
+  el('aboutBody').innerHTML = `<b>${aboutData.productName}</b> v${aboutData.version} — ${escapeHtml(aboutData.description)}<br />
+    <a href="${aboutData.repository}" target="_blank" rel="noopener">${aboutData.repository}</a>`;
+}
 
 async function loadStatus() {
   const res = await fetch('/api/status');
