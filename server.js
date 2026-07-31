@@ -10,12 +10,23 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 
 const DB = process.env.FRIENDS_DB || 'friends.db';
 const PORT = Number(process.env.PORT || 3939);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ALLOWED_SORT = ['presence_since', 'nickname', 'displayname', 'common_communities_count', 'applied_at'];
+
+// État du run de suppression réelle en cours (au plus un à la fois).
+const applyState = { running: false, log: [], exitCode: null, sseClients: new Set() };
+
+function applyStateBroadcast(line) {
+  applyState.log.push(line);
+  for (const res of applyState.sseClients) res.write(`data: ${JSON.stringify(line)}\n\n`);
+}
+function applyStateBroadcastDone(code) {
+  for (const res of applyState.sseClients) res.write(`event: done\ndata: ${code}\n\n`);
+}
 
 function esc(v) {
   return String(v).replace(/'/g, "''");
@@ -113,6 +124,73 @@ const server = http.createServer(async (req, res) => {
     const decidedAt = decision === null ? 'NULL' : 'CURRENT_TIMESTAMP';
     sqlExec(`UPDATE friends SET decision=${decVal}, decided_at=${decidedAt} WHERE id='${esc(id)}' AND applied_at IS NULL;`);
     return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/status') {
+    function fileInfo(p) {
+      try {
+        const st = fs.statSync(p);
+        return { exists: true, mtime: st.mtime.toISOString() };
+      } catch {
+        return { exists: false, mtime: null };
+      }
+    }
+    const dbInfo = fileInfo(DB);
+    let dbCount = null;
+    if (dbInfo.exists) {
+      try {
+        dbCount = sqlJson(`SELECT COUNT(*) as n FROM friends;`)[0].n;
+      } catch {
+        dbCount = null;
+      }
+    }
+    return sendJson(res, 200, {
+      auth: fileInfo('auth.json'),
+      friendsJson: fileInfo('friends.json'),
+      db: { ...dbInfo, count: dbCount },
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/apply-run') {
+    if (applyState.running) return sendJson(res, 409, { error: 'already running' });
+    const { limit } = await readBody(req);
+
+    applyState.running = true;
+    applyState.log = [];
+    applyState.exitCode = null;
+
+    const cliArgs = ['apply-removals.js', '--confirm'];
+    if (Number.isInteger(limit) && limit > 0) cliArgs.push('--limit', String(limit));
+
+    const child = spawn('node', cliArgs, { cwd: __dirname });
+    const onData = (chunk) => {
+      chunk.toString().split('\n').filter(Boolean).forEach(applyStateBroadcast);
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.on('close', (code) => {
+      applyState.running = false;
+      applyState.exitCode = code;
+      applyStateBroadcastDone(code);
+    });
+
+    return sendJson(res, 200, { started: true });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/apply-events') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    res.write(`data: ${JSON.stringify(`--- ${applyState.running ? 'run en cours' : 'dernier run'} (${applyState.log.length} ligne(s) déjà loguées) ---`)}\n\n`);
+    for (const line of applyState.log) res.write(`data: ${JSON.stringify(line)}\n\n`);
+    if (!applyState.running && applyState.exitCode !== null) {
+      res.write(`event: done\ndata: ${applyState.exitCode}\n\n`);
+    }
+    applyState.sseClients.add(res);
+    req.on('close', () => applyState.sseClients.delete(res));
+    return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/bulk-decision') {

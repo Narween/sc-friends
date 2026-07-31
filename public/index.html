@@ -92,6 +92,23 @@
 
   .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; justify-content: center; color: var(--text-dim); }
   footer { padding: 16px 24px; color: var(--text-dim); font-size: 12px; }
+
+  .panel { margin: 16px 24px; padding: 16px 20px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  .panel .dim { color: var(--text-dim); font-size: 13px; }
+  .setup-steps { padding-left: 20px; }
+  .setup-steps li { margin-bottom: 10px; }
+  .status { margin-left: 8px; font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127,146,163,0.15); color: var(--text-dim); }
+  .status.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
+  .status.missing { background: rgba(229,72,77,0.15); color: var(--remove); }
+
+  .panel.danger { border-color: rgba(229,72,77,0.4); }
+  .panel.danger h2 { color: var(--remove); }
+  .danger-controls { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .danger-controls label { font-size: 13px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  .danger-btn { background: var(--remove); color: #fff; border-color: var(--remove); font-weight: 600; }
+  .danger-btn:disabled { background: var(--bg-row); color: var(--text-dim); border-color: var(--border); cursor: not-allowed; }
+  .apply-log { margin-top: 14px; max-height: 260px; overflow-y: auto; background: #0a1119; border: 1px solid var(--border); border-radius: 6px; padding: 10px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -99,7 +116,28 @@
 <header>
   <h1>sc-friends</h1>
   <div class="summary" id="summary">Chargement…</div>
+  <button id="toggleSetup" style="margin-left:auto">⚙ Remplir la base</button>
 </header>
+
+<section class="panel" id="setupPanel" style="display:none">
+  <h2>Comment remplir / rafraîchir <code>friends.db</code></h2>
+  <p class="dim">Ces commandes se lancent dans un terminal, à la racine du projet — cette page ne les déclenche pas elle-même (elles ouvrent un vrai navigateur pour la connexion).</p>
+  <ol class="setup-steps">
+    <li>
+      <code>node login.js</code> — ouvre Chromium, tu te connectes à la main (2FA compris), la session est sauvegardée dans <code>auth.json</code>.
+      <span class="status" id="status-auth">…</span>
+    </li>
+    <li>
+      <code>node fetch-friends.js</code> — recharge <code>auth.json</code> et récupère la liste complète des amis dans <code>friends.json</code>.
+      <span class="status" id="status-friendsJson">…</span>
+    </li>
+    <li>
+      <code>node import-friends.js</code> — charge <code>friends.json</code> dans <code>friends.db</code> (upsert : ne touche jamais aux décisions déjà prises).
+      <span class="status" id="status-db">…</span>
+    </li>
+  </ol>
+  <button id="refreshStatus">Rafraîchir les statuts</button>
+</section>
 
 <div class="toolbar">
   <input type="text" id="search" placeholder="Chercher un pseudo…" />
@@ -151,11 +189,28 @@
     <span id="pageInfo"></span>
     <button id="nextPage">Suivant →</button>
   </div>
+
+  <section class="panel danger">
+    <h2>⚠ Suppression réelle sur Spectrum</h2>
+    <p class="dim">
+      Retire réellement, sur le site, tous les amis actuellement marqués <span class="pill remove">Retirer</span>
+      et pas encore appliqués (<b id="pendingCount">…</b>). Action irréversible côté ami (il verra qu'il a été
+      retiré). Pilote un vrai navigateur qui clique le bouton Unfriend, avec une pause entre chaque suppression.
+    </p>
+    <div class="danger-controls">
+      <label>Limiter à (optionnel, pour tester) <input type="number" id="applyLimit" min="1" placeholder="tout" style="width:80px" /></label>
+      <label>Tape <code>OUI</code> en majuscules pour activer le bouton :
+        <input type="text" id="confirmText" placeholder="OUI" style="width:80px" />
+      </label>
+      <button id="applyBtn" class="primary danger-btn" disabled>Lancer la suppression réelle</button>
+    </div>
+    <pre id="applyLog" class="apply-log" style="display:none"></pre>
+  </section>
 </main>
 
 <footer>
-  Cette page ne touche que la base locale (colonne <code>decision</code>). Aucune suppression réelle n'a lieu ici —
-  ça se fait ensuite via <code>node apply-removals.js --confirm</code>.
+  Les décisions (colonne <code>decision</code>) sont locales. Seul le bouton rouge ci-dessus déclenche de vrais
+  appels vers Spectrum, via <code>apply-removals.js --confirm</code>.
 </footer>
 
 <script>
@@ -185,6 +240,7 @@ async function loadSummary() {
     <span class="pill remove">${counts.remove || 0} retirer</span>
     <span class="pill applied">${counts.applied || 0} déjà appliqués</span>
   `;
+  el('pendingCount').textContent = counts.remove || 0;
 }
 
 function buildQuery(extra) {
@@ -275,6 +331,73 @@ function debounce(fn, ms) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
+
+// --- Panneau "remplir la base" ---
+el('toggleSetup').addEventListener('click', () => {
+  const panel = el('setupPanel');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) loadStatus();
+});
+el('refreshStatus').addEventListener('click', loadStatus);
+
+function statusBadge(info, okLabel, missingLabel) {
+  if (!info.exists) return `<span class="status missing">${missingLabel}</span>`;
+  const date = new Date(info.mtime).toLocaleString();
+  return `<span class="status ok">${okLabel} — ${date}</span>`;
+}
+
+async function loadStatus() {
+  const res = await fetch('/api/status');
+  const s = await res.json();
+  el('status-auth').outerHTML = `<span class="status ${s.auth.exists ? 'ok' : 'missing'}" id="status-auth">${
+    s.auth.exists ? 'auth.json présent — ' + new Date(s.auth.mtime).toLocaleString() : 'auth.json absent'
+  }</span>`;
+  el('status-friendsJson').outerHTML = `<span class="status ${s.friendsJson.exists ? 'ok' : 'missing'}" id="status-friendsJson">${
+    s.friendsJson.exists ? 'friends.json présent — ' + new Date(s.friendsJson.mtime).toLocaleString() : 'friends.json absent'
+  }</span>`;
+  el('status-db').outerHTML = `<span class="status ${s.db.exists ? 'ok' : 'missing'}" id="status-db">${
+    s.db.exists ? `friends.db présent — ${s.db.count} ligne(s)` : 'friends.db absent'
+  }</span>`;
+}
+
+// --- Suppression réelle ---
+el('confirmText').addEventListener('input', () => {
+  el('applyBtn').disabled = el('confirmText').value !== 'OUI';
+});
+
+let evtSource = null;
+
+el('applyBtn').addEventListener('click', async () => {
+  if (el('confirmText').value !== 'OUI') return;
+  if (!confirm('Dernière confirmation : lancer réellement la suppression sur Spectrum ?')) return;
+
+  const limitVal = parseInt(el('applyLimit').value, 10);
+  const body = Number.isInteger(limitVal) && limitVal > 0 ? { limit: limitVal } : {};
+
+  const res = await fetch('/api/apply-run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (res.status === 409) { alert('Une suppression est déjà en cours.'); return; }
+
+  el('applyBtn').disabled = true;
+  el('confirmText').value = '';
+  el('applyLog').style.display = 'block';
+  el('applyLog').textContent = '';
+
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource('/api/apply-events');
+  evtSource.onmessage = (e) => {
+    el('applyLog').textContent += JSON.parse(e.data) + '\n';
+    el('applyLog').scrollTop = el('applyLog').scrollHeight;
+  };
+  evtSource.addEventListener('done', (e) => {
+    el('applyLog').textContent += `\n--- terminé (code ${e.data}) ---\n`;
+    evtSource.close();
+    loadSummary();
+    loadRows();
+  });
+});
 
 loadSummary();
 loadRows();
