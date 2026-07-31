@@ -51,3 +51,22 @@ jobs:
             dist-electron/*.dmg
             dist-electron/*.AppImage
           if-no-files-found: ignore
+
+  release:
+    # Uniquement sur un tag de version (ex: v1.0.0) — pas sur un déclenchement
+    # manuel, qui sert juste à tester le build sans publier quoi que ce soit.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-artifacts/**/*
+          generate_release_notes: true
