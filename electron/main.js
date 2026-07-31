@@ -3,11 +3,23 @@
 // friends.json, friends.db) vivent dans le dossier userData du système —
 // le seul emplacement garanti inscriptible pour une appli installée (ex:
 // Program Files sur Windows est en lecture seule pour l'utilisateur courant).
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, dialog } = require('electron');
 const path = require('node:path');
 
 const PORT = 3939;
 const APP_ORIGIN = `http://127.0.0.1:${PORT}`;
+
+// Filet de sécurité : sans ça, une exception non attrapée dans le process
+// principal fait apparaître la boîte de dialogue de crash générique
+// d'Electron/Chromium (illisible, non traduite). On log dans stderr et on
+// tente de garder l'appli ouverte plutôt que de la laisser planter dans le
+// vide sans explication.
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException:', err);
+  if (app.isReady()) {
+    dialog.showErrorBox('SC Friends — erreur inattendue / unexpected error', String(err?.stack || err));
+  }
+});
 
 // Empêche deux instances de l'appli de tourner en même temps (un double-clic
 // accidentel, ou l'appli déjà ouverte en arrière-plan) : la deuxième

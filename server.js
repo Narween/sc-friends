@@ -265,6 +265,15 @@ const server = http.createServer(async (req, res) => {
       st.exitCode = code;
       broadcastDone(name, code);
     });
+    // Si spawn() échoue carrément (exécutable introuvable, permission
+    // refusée...), 'close' ne se déclenche jamais : sans ce handler, la
+    // tâche restait "en cours" indéfiniment sans jamais rien afficher.
+    child.on('error', (spawnErr) => {
+      broadcastLine(name, `spawn error: ${spawnErr.message}`);
+      st.running = false;
+      st.exitCode = -1;
+      broadcastDone(name, -1);
+    });
 
     return sendJson(res, 200, { started: true });
   }
