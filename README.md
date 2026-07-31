@@ -162,13 +162,43 @@ de configuration standard du système (`%APPDATA%` sur Windows, `~/Library/
 Application Support` sur macOS, `~/.config` sur Linux), pas dans le dossier
 d'installation.
 
-### Récupérer un installeur déjà construit
+### Télécharger un installeur (recommandé)
 
-Le workflow GitHub Actions (`.github/workflows/build.yml`) compile
-automatiquement les 3 plateformes sur de vrais runners Windows/macOS/Linux
-(pas de cross-compilation locale). Depuis l'onglet **Actions** du repo,
-lance le workflow manuellement (`workflow_dispatch`) ou pousse un tag
-`vX.Y.Z`, puis télécharge l'artefact correspondant à ton OS.
+👉 **[Dernière version dans l'onglet Releases](https://github.com/Narween/sc-friends/releases/latest)**
+— un fichier par plateforme (`.exe` Windows, `.dmg` macOS, `.AppImage`
+Linux), compilés automatiquement par GitHub Actions sur de vrais runners
+Windows/macOS/Linux (pas de cross-compilation).
+
+> ⚠️ **Ces installeurs ne sont pas signés** (pas de certificat de signature
+> de code — ça coûte plusieurs centaines d'euros/an, hors budget d'un outil
+> perso). Ton OS va donc t'avertir au premier lancement. C'est normal, pas un
+> signe de malware : le code est public, tu peux le relire ou le recompiler
+> toi-même si tu préfères (voir plus bas).
+
+**Windows** : Defender SmartScreen bloque l'exécution la première fois.
+Clique **"Informations complémentaires"** puis **"Exécuter quand même"**.
+
+**macOS** : Gatekeeper refuse d'ouvrir une app non notariée par un clic
+simple. Ouvre le `.dmg`, glisse l'app dans *Applications*, puis fais un
+**clic droit → Ouvrir** (pas un double-clic) et confirme dans la boîte de
+dialogue. Nécessaire uniquement au premier lancement. Le build macOS est
+**Apple Silicon (arm64) uniquement** — pas de build Intel pour l'instant.
+
+**Linux** : rends l'AppImage exécutable avant de la lancer :
+```bash
+chmod +x SC.Friends-*.AppImage
+./SC.Friends-*.AppImage
+```
+
+Pour reconstruire toi-même un build (par exemple pour vérifier qu'il
+correspond au code source), voir les sections suivantes.
+
+### Compiler depuis les sources via Actions
+
+Depuis l'onglet **Actions** du repo, tu peux aussi lancer le workflow
+manuellement (`workflow_dispatch`) sur n'importe quelle branche/commit, sans
+passer par un tag de version — utile pour tester une modif avant de publier
+une release.
 
 ### Lancer en mode développement
 
