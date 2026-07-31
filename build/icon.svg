@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c3a52"/>
+      <stop offset="1" stop-color="#0f1720"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg)"/>
+
+  <!-- silhouette "ami" -->
+  <circle cx="430" cy="400" r="140" fill="#dbe6f0"/>
+  <path d="M 190 800 C 190 590 300 500 430 500 C 560 500 670 590 670 800 Z" fill="#dbe6f0"/>
+
+  <!-- badge de retrait -->
+  <circle cx="740" cy="740" r="170" fill="#0f1720"/>
+  <circle cx="740" cy="740" r="140" fill="#e5484d"/>
+  <rect x="660" y="705" width="160" height="70" rx="35" fill="#ffffff"/>
+</svg>

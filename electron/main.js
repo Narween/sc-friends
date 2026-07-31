@@ -24,6 +24,7 @@ function createWindow() {
     height: 1000,
     title: 'sc-friends',
     autoHideMenuBar: true,
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
   });
   win.loadURL(`http://127.0.0.1:${PORT}`);
 }
