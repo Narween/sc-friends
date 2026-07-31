@@ -1,12 +1,24 @@
 # sc-friends
 
-Boîte à outils Playwright + SQLite pour exporter et faire le ménage dans sa
-liste d'amis [Spectrum](https://robertsspaceindustries.com/spectrum) (le hub
-communautaire de Star Citizen / Roberts Space Industries).
+**Fait le ménage dans ta liste d'amis [Spectrum](https://robertsspaceindustries.com/spectrum)**
+(le hub communautaire de Star Citizen / Roberts Space Industries) : vois qui
+n'est plus actif depuis quand, décide tranquillement qui garder ou retirer,
+puis applique réellement les retraits en un clic — sans jamais devoir faire
+ça un par un à la main dans l'UI de Spectrum.
+
+Ce que ça fait, concrètement :
+1. **Récupère** ta liste d'amis complète (nom, dernière connexion, orgs en commun...)
+2. **Affiche-la** dans un tableau triable/filtrable (interface web ou appli desktop)
+3. **Laisse-toi décider** qui garder et qui retirer — en local, aucun impact sur le vrai compte à ce stade
+4. **Applique** réellement les retraits choisis sur Spectrum, seulement quand tu confirmes explicitement
+
+📥 Le plus simple pour l'utiliser : **[télécharger l'appli desktop](https://github.com/Narween/sc-friends/releases/latest)**
+(Windows/macOS/Linux, aucune installation technique requise). Un usage en
+ligne de commande est aussi possible, voir plus bas.
 
 Toute décision (qui reste, qui part) se prend **en local dans une base
 SQLite** avant d'appliquer quoi que ce soit sur le vrai compte. Rien n'est
-supprimé côté site sans un `--confirm` explicite.
+supprimé côté site sans confirmation explicite.
 
 ## Pourquoi
 
