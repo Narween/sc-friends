@@ -1,4 +1,7 @@
 node_modules/
+dist-electron/
+friends.db-wal
+friends.db-shm
 
 # Données personnelles / secrets — ne jamais committer
 auth.json

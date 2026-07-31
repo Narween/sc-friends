@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8" />
-<title>sc-friends — revue</title>
+<title>sc-friends</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root {
@@ -17,6 +17,19 @@
     --keep: #3fbf6b;
     --remove: #e5484d;
     --applied: #9a6bd6;
+  }
+  /* Thème clair : appliqué soit par préférence système ("auto", pas de
+     data-theme posé), soit forcé via data-theme="light". data-theme gagne
+     toujours sur la media query dans les deux sens. */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      --bg: #f4f6f9; --bg-panel: #ffffff; --bg-row: #eef2f6; --bg-row-alt: #f8fafc;
+      --border: #dde4ec; --text: #1c2733; --text-dim: #64758a;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --bg-panel: #ffffff; --bg-row: #eef2f6; --bg-row-alt: #f8fafc;
+    --border: #dde4ec; --text: #1c2733; --text-dim: #64758a;
   }
   * { box-sizing: border-box; }
   body {
@@ -43,6 +56,10 @@
   .pill.undecided { background: rgba(127,146,163,0.15); color: var(--text-dim); }
   .pill.applied { background: rgba(154,107,214,0.15); color: var(--applied); }
 
+  .header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .lang-switch button { padding: 4px 8px; font-size: 12px; }
+  .lang-switch button.active { background: var(--accent); color: #06202f; border-color: var(--accent); }
+
   .toolbar {
     padding: 12px 24px;
     display: flex;
@@ -59,10 +76,12 @@
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 13px;
+    font-family: inherit;
   }
   input[type=text] { min-width: 220px; }
   button { cursor: pointer; }
   button:hover { border-color: var(--accent); }
+  button:disabled { cursor: not-allowed; opacity: 0.6; }
   button.primary { background: var(--accent); color: #06202f; font-weight: 600; border-color: var(--accent); }
   .bulk { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   .bulk .count { color: var(--text-dim); font-size: 12px; }
@@ -96,77 +115,103 @@
   .panel { margin: 16px 24px; padding: 16px 20px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
   .panel h2 { margin: 0 0 8px; font-size: 14px; }
   .panel .dim { color: var(--text-dim); font-size: 13px; }
-  .setup-steps { padding-left: 20px; }
-  .setup-steps li { margin-bottom: 10px; }
-  .status { margin-left: 8px; font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127,146,163,0.15); color: var(--text-dim); }
+  .setup-steps { padding-left: 0; list-style: none; margin: 0; }
+  .setup-steps li { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .setup-steps li:last-child { border-bottom: none; }
+  .step-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .step-desc { flex: 1; min-width: 260px; }
+  .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127,146,163,0.15); color: var(--text-dim); white-space: nowrap; }
   .status.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .status.missing { background: rgba(229,72,77,0.15); color: var(--remove); }
+  .task-log { margin-top: 8px; max-height: 160px; overflow-y: auto; background: #0a1119; border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; display: none; }
 
   .panel.danger { border-color: rgba(229,72,77,0.4); }
   .panel.danger h2 { color: var(--remove); }
   .danger-controls { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
   .danger-controls label { font-size: 13px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
   .danger-btn { background: var(--remove); color: #fff; border-color: var(--remove); font-weight: 600; }
-  .danger-btn:disabled { background: var(--bg-row); color: var(--text-dim); border-color: var(--border); cursor: not-allowed; }
-  .apply-log { margin-top: 14px; max-height: 260px; overflow-y: auto; background: #0a1119; border: 1px solid var(--border); border-radius: 6px; padding: 10px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
+  .danger-btn:disabled { background: var(--bg-row); color: var(--text-dim); border-color: var(--border); }
 </style>
 </head>
 <body>
 
 <header>
   <h1>sc-friends</h1>
-  <div class="summary" id="summary">Chargement…</div>
-  <button id="toggleSetup" style="margin-left:auto">⚙ Remplir la base</button>
+  <div class="summary" id="summary">…</div>
+  <div class="header-actions">
+    <div class="lang-switch">
+      <button id="langFr" data-lang="fr">FR</button>
+      <button id="langEn" data-lang="en">EN</button>
+    </div>
+    <div class="lang-switch">
+      <button id="themeAuto" data-theme-choice="auto" title="Système / System">🖥</button>
+      <button id="themeDark" data-theme-choice="dark" title="Sombre / Dark">🌙</button>
+      <button id="themeLight" data-theme-choice="light" title="Clair / Light">☀</button>
+    </div>
+    <button id="toggleSetup" data-i18n="setup.toggle"></button>
+  </div>
 </header>
 
 <section class="panel" id="setupPanel" style="display:none">
-  <h2>Comment remplir / rafraîchir <code>friends.db</code></h2>
-  <p class="dim">Ces commandes se lancent dans un terminal, à la racine du projet — cette page ne les déclenche pas elle-même (elles ouvrent un vrai navigateur pour la connexion).</p>
-  <ol class="setup-steps">
+  <h2 data-i18n="setup.title"></h2>
+  <p class="dim" data-i18n="setup.intro"></p>
+  <ul class="setup-steps">
     <li>
-      <code>node login.js</code> — ouvre Chromium, tu te connectes à la main (2FA compris), la session est sauvegardée dans <code>auth.json</code>.
-      <span class="status" id="status-auth">…</span>
+      <div class="step-row">
+        <div class="step-desc"><b>1. <span data-i18n="setup.step1.title"></span></b><br /><span class="dim" data-i18n="setup.step1.desc"></span></div>
+        <span class="status" id="status-auth">…</span>
+        <button id="runLogin" data-i18n="setup.run"></button>
+        <button id="confirmLogin" style="display:none" data-i18n="setup.loginConfirm"></button>
+      </div>
+      <pre class="task-log" id="log-login"></pre>
     </li>
     <li>
-      <code>node fetch-friends.js</code> — recharge <code>auth.json</code> et récupère la liste complète des amis dans <code>friends.json</code>.
-      <span class="status" id="status-friendsJson">…</span>
+      <div class="step-row">
+        <div class="step-desc"><b>2. <span data-i18n="setup.step2.title"></span></b><br /><span class="dim" data-i18n="setup.step2.desc"></span></div>
+        <span class="status" id="status-friendsJson">…</span>
+        <button id="runFetch" data-i18n="setup.run"></button>
+      </div>
+      <pre class="task-log" id="log-fetch"></pre>
     </li>
     <li>
-      <code>node import-friends.js</code> — charge <code>friends.json</code> dans <code>friends.db</code> (upsert : ne touche jamais aux décisions déjà prises).
-      <span class="status" id="status-db">…</span>
+      <div class="step-row">
+        <div class="step-desc"><b>3. <span data-i18n="setup.step3.title"></span></b><br /><span class="dim" data-i18n="setup.step3.desc"></span></div>
+        <span class="status" id="status-db">…</span>
+        <button id="runImport" data-i18n="setup.run"></button>
+      </div>
+      <pre class="task-log" id="log-import"></pre>
     </li>
-  </ol>
-  <button id="refreshStatus">Rafraîchir les statuts</button>
+  </ul>
 </section>
 
 <div class="toolbar">
-  <input type="text" id="search" placeholder="Chercher un pseudo…" />
+  <input type="text" id="search" data-i18n-placeholder="toolbar.search" />
   <select id="decisionFilter">
-    <option value="all">Toutes décisions</option>
-    <option value="undecided">Indécis</option>
-    <option value="keep">Garder</option>
-    <option value="remove">Retirer</option>
+    <option value="all" data-i18n="toolbar.decisionAll"></option>
+    <option value="undecided" data-i18n="toolbar.decisionUndecided"></option>
+    <option value="keep" data-i18n="toolbar.decisionKeep"></option>
+    <option value="remove" data-i18n="toolbar.decisionRemove"></option>
   </select>
   <select id="statusFilter">
-    <option value="all">Tous statuts</option>
-    <option value="online">En ligne</option>
-    <option value="playing">En jeu</option>
-    <option value="away">Absent</option>
-    <option value="offline">Hors-ligne</option>
+    <option value="all" data-i18n="toolbar.statusAll"></option>
+    <option value="online" data-i18n="toolbar.statusOnline"></option>
+    <option value="playing" data-i18n="toolbar.statusPlaying"></option>
+    <option value="away" data-i18n="toolbar.statusAway"></option>
+    <option value="offline" data-i18n="toolbar.statusOffline"></option>
   </select>
   <select id="sort">
-    <option value="presence_since">Trier: dernière connexion</option>
-    <option value="nickname">Trier: pseudo</option>
-    <option value="displayname">Trier: nom affiché</option>
-    <option value="common_communities_count">Trier: orgs communes</option>
+    <option value="presence_since" data-i18n="toolbar.sortLastSeen"></option>
+    <option value="nickname" data-i18n="toolbar.sortNickname"></option>
+    <option value="displayname" data-i18n="toolbar.sortDisplayname"></option>
+    <option value="common_communities_count" data-i18n="toolbar.sortOrgs"></option>
   </select>
-  <button id="orderBtn" title="Inverser l'ordre">↑ asc</button>
+  <button id="orderBtn">↑ asc</button>
 
   <div class="bulk">
     <span class="count" id="matchCount"></span>
-    <button id="bulkKeep">Marquer filtrés: Garder</button>
-    <button id="bulkRemove">Marquer filtrés: Retirer</button>
-    <button id="bulkClear">Marquer filtrés: Indécis</button>
+    <button id="bulkKeep" data-i18n="toolbar.bulkKeep"></button>
+    <button id="bulkRemove" data-i18n="toolbar.bulkRemove"></button>
+    <button id="bulkClear" data-i18n="toolbar.bulkClear"></button>
   </div>
 </div>
 
@@ -175,53 +220,184 @@
     <thead>
       <tr>
         <th></th>
-        <th>Statut</th>
-        <th>Dernière connexion</th>
-        <th>Orgs communes</th>
-        <th>Décision</th>
+        <th data-i18n="table.status"></th>
+        <th data-i18n="table.lastSeen"></th>
+        <th data-i18n="table.orgs"></th>
+        <th data-i18n="table.decision"></th>
       </tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
 
   <div class="pagination">
-    <button id="prevPage">← Précédent</button>
+    <button id="prevPage" data-i18n="pagination.prev"></button>
     <span id="pageInfo"></span>
-    <button id="nextPage">Suivant →</button>
+    <button id="nextPage" data-i18n="pagination.next"></button>
   </div>
 
   <section class="panel danger">
-    <h2>⚠ Suppression réelle sur Spectrum</h2>
-    <p class="dim">
-      Retire réellement, sur le site, tous les amis actuellement marqués <span class="pill remove">Retirer</span>
-      et pas encore appliqués (<b id="pendingCount">…</b>). Action irréversible côté ami (il verra qu'il a été
-      retiré). Pilote un vrai navigateur qui clique le bouton Unfriend, avec une pause entre chaque suppression.
-    </p>
+    <h2 data-i18n="danger.title"></h2>
+    <p class="dim" id="dangerDesc"></p>
     <div class="danger-controls">
-      <label>Limiter à (optionnel, pour tester) <input type="number" id="applyLimit" min="1" placeholder="tout" style="width:80px" /></label>
-      <label>Tape <code>OUI</code> en majuscules pour activer le bouton :
-        <input type="text" id="confirmText" placeholder="OUI" style="width:80px" />
-      </label>
-      <button id="applyBtn" class="primary danger-btn" disabled>Lancer la suppression réelle</button>
+      <label><span data-i18n="danger.limitLabel"></span> <input type="number" id="applyLimit" min="1" style="width:80px" /></label>
+      <label><span data-i18n="danger.confirmLabel"></span> <input type="text" id="confirmText" placeholder="OUI" style="width:80px" /></label>
+      <button id="applyBtn" class="primary danger-btn" disabled data-i18n="danger.launch"></button>
     </div>
-    <pre id="applyLog" class="apply-log" style="display:none"></pre>
+    <pre id="applyLog" class="task-log"></pre>
   </section>
 </main>
 
-<footer>
-  Les décisions (colonne <code>decision</code>) sont locales. Seul le bouton rouge ci-dessus déclenche de vrais
-  appels vers Spectrum, via <code>apply-removals.js --confirm</code>.
-</footer>
+<footer data-i18n="footer.text"></footer>
 
 <script>
+const translations = {
+  fr: {
+    'setup.toggle': '⚙ Remplir la base',
+    'setup.title': 'Comment remplir / rafraîchir friends.db',
+    'setup.intro': 'Chaque étape lance un vrai script. L\'étape 1 ouvre un vrai navigateur : connecte-toi normalement (2FA compris), puis clique "Je suis connecté".',
+    'setup.step1.title': 'Connexion',
+    'setup.step1.desc': 'Ouvre Chromium sur Spectrum, sauvegarde la session dans auth.json une fois connecté.',
+    'setup.step2.title': 'Récupération',
+    'setup.step2.desc': 'Recharge auth.json et récupère la liste complète des amis dans friends.json.',
+    'setup.step3.title': 'Import',
+    'setup.step3.desc': 'Charge friends.json dans friends.db (upsert : ne touche jamais aux décisions déjà prises).',
+    'setup.run': 'Lancer',
+    'setup.loginConfirm': '✅ Je suis connecté',
+    'toolbar.search': 'Chercher un pseudo…',
+    'toolbar.decisionAll': 'Toutes décisions',
+    'toolbar.decisionUndecided': 'Indécis',
+    'toolbar.decisionKeep': 'Garder',
+    'toolbar.decisionRemove': 'Retirer',
+    'toolbar.statusAll': 'Tous statuts',
+    'toolbar.statusOnline': 'En ligne',
+    'toolbar.statusPlaying': 'En jeu',
+    'toolbar.statusAway': 'Absent',
+    'toolbar.statusOffline': 'Hors-ligne',
+    'toolbar.sortLastSeen': 'Trier: dernière connexion',
+    'toolbar.sortNickname': 'Trier: pseudo',
+    'toolbar.sortDisplayname': 'Trier: nom affiché',
+    'toolbar.sortOrgs': 'Trier: orgs communes',
+    'toolbar.bulkKeep': 'Marquer filtrés: Garder',
+    'toolbar.bulkRemove': 'Marquer filtrés: Retirer',
+    'toolbar.bulkClear': 'Marquer filtrés: Indécis',
+    'table.status': 'Statut',
+    'table.lastSeen': 'Dernière connexion',
+    'table.orgs': 'Orgs communes',
+    'table.decision': 'Décision',
+    'pagination.prev': '← Précédent',
+    'pagination.next': 'Suivant →',
+    'danger.title': '⚠ Suppression réelle sur Spectrum',
+    'danger.limitLabel': 'Limiter à (optionnel, pour tester)',
+    'danger.confirmLabel': 'Tape OUI en majuscules pour activer le bouton :',
+    'danger.launch': 'Lancer la suppression réelle',
+    'footer.text': 'Les décisions sont locales. Seul le bouton rouge déclenche de vrais appels vers Spectrum.',
+    row: { keep: 'Garder', remove: 'Retirer', undecided: 'Indécis', appliedOk: 'Appliqué ✓', appliedFail: 'Échec ✗', unknown: 'inconnu' },
+    unit: { matches: (n) => `${n} correspondance(s)`, page: (p, tot, total) => `Page ${p} / ${tot} (${total} résultats)`, updated: (n) => `${n} ami(s) mis à jour.` },
+    confirmBulk: (label, count) => `Marquer TOUS les résultats filtrés actuels (${count}) comme "${label}" ?`,
+    dangerDesc: (n) => `Retire réellement, sur le site, tous les amis marqués "Retirer" et pas encore appliqués (${n}). Action irréversible côté ami. Pilote un vrai navigateur qui clique le bouton Unfriend, avec une pause entre chaque suppression.`,
+    alreadyRunning: 'Une tâche est déjà en cours.',
+    lastConfirm: 'Dernière confirmation : lancer réellement la suppression sur Spectrum ?',
+    done: (code) => `\n--- terminé (code ${code}) ---\n`,
+  },
+  en: {
+    'setup.toggle': '⚙ Populate database',
+    'setup.title': 'How to populate / refresh friends.db',
+    'setup.intro': 'Each step runs a real script. Step 1 opens a real browser: log in normally (2FA included), then click "I\'m logged in".',
+    'setup.step1.title': 'Login',
+    'setup.step1.desc': 'Opens Chromium on Spectrum, saves the session to auth.json once logged in.',
+    'setup.step2.title': 'Fetch',
+    'setup.step2.desc': 'Reloads auth.json and fetches the full friends list into friends.json.',
+    'setup.step3.title': 'Import',
+    'setup.step3.desc': 'Loads friends.json into friends.db (upsert: never overwrites decisions already made).',
+    'setup.run': 'Run',
+    'setup.loginConfirm': '✅ I\'m logged in',
+    'toolbar.search': 'Search a nickname…',
+    'toolbar.decisionAll': 'All decisions',
+    'toolbar.decisionUndecided': 'Undecided',
+    'toolbar.decisionKeep': 'Keep',
+    'toolbar.decisionRemove': 'Remove',
+    'toolbar.statusAll': 'All statuses',
+    'toolbar.statusOnline': 'Online',
+    'toolbar.statusPlaying': 'Playing',
+    'toolbar.statusAway': 'Away',
+    'toolbar.statusOffline': 'Offline',
+    'toolbar.sortLastSeen': 'Sort: last seen',
+    'toolbar.sortNickname': 'Sort: nickname',
+    'toolbar.sortDisplayname': 'Sort: display name',
+    'toolbar.sortOrgs': 'Sort: common orgs',
+    'toolbar.bulkKeep': 'Mark filtered: Keep',
+    'toolbar.bulkRemove': 'Mark filtered: Remove',
+    'toolbar.bulkClear': 'Mark filtered: Undecided',
+    'table.status': 'Status',
+    'table.lastSeen': 'Last seen',
+    'table.orgs': 'Common orgs',
+    'table.decision': 'Decision',
+    'pagination.prev': '← Previous',
+    'pagination.next': 'Next →',
+    'danger.title': '⚠ Real deletion on Spectrum',
+    'danger.limitLabel': 'Limit to (optional, for testing)',
+    'danger.confirmLabel': 'Type YES in capitals to enable the button:',
+    'danger.launch': 'Run the real deletion',
+    'footer.text': 'Decisions are local. Only the red button triggers real calls to Spectrum.',
+    row: { keep: 'Keep', remove: 'Remove', undecided: 'Undecided', appliedOk: 'Applied ✓', appliedFail: 'Failed ✗', unknown: 'unknown' },
+    unit: { matches: (n) => `${n} match(es)`, page: (p, tot, total) => `Page ${p} / ${tot} (${total} results)`, updated: (n) => `${n} friend(s) updated.` },
+    confirmBulk: (label, count) => `Mark ALL currently filtered results (${count}) as "${label}"?`,
+    dangerDesc: (n) => `Really removes, on the site, every friend marked "Remove" and not yet applied (${n}). Irreversible on the friend's side. Drives a real browser clicking the Unfriend button, with a pause between each removal.`,
+    alreadyRunning: 'A task is already running.',
+    lastConfirm: 'Final confirmation: really run the deletion on Spectrum?',
+    done: (code) => `\n--- done (code ${code}) ---\n`,
+  },
+};
+translations.en.confirmWord = 'YES';
+translations.fr.confirmWord = 'OUI';
+
+let lang = localStorage.getItem('sc-friends-lang') || 'fr';
+function t(key) { return translations[lang][key] ?? key; }
+
+function applyTranslations() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.getElementById('confirmText').placeholder = translations[lang].confirmWord;
+  document.getElementById('langFr').classList.toggle('active', lang === 'fr');
+  document.getElementById('langEn').classList.toggle('active', lang === 'en');
+}
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('sc-friends-lang', l);
+  applyTranslations();
+  loadSummary();
+  loadRows();
+}
+document.getElementById('langFr').addEventListener('click', () => setLang('fr'));
+document.getElementById('langEn').addEventListener('click', () => setLang('en'));
+
+// --- Thème clair / sombre / système ---
+let theme = localStorage.getItem('sc-friends-theme') || 'auto';
+function applyTheme() {
+  if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', theme);
+  ['Auto', 'Dark', 'Light'].forEach((id) => {
+    document.getElementById('theme' + id).classList.toggle('active', theme === id.toLowerCase());
+  });
+}
+function setTheme(t) {
+  theme = t;
+  localStorage.setItem('sc-friends-theme', t);
+  applyTheme();
+}
+document.getElementById('themeAuto').addEventListener('click', () => setTheme('auto'));
+document.getElementById('themeDark').addEventListener('click', () => setTheme('dark'));
+document.getElementById('themeLight').addEventListener('click', () => setTheme('light'));
+applyTheme();
+
 const state = { search: '', decision: 'all', status: 'all', sort: 'presence_since', order: 'asc', page: 1, pageSize: 50 };
 
 const el = (id) => document.getElementById(id);
 
 function fmtDate(unixSeconds) {
-  if (!unixSeconds) return '<span style="color:var(--text-dim)">inconnu</span>';
-  const d = new Date(unixSeconds * 1000);
-  return d.toISOString().slice(0, 10);
+  if (!unixSeconds) return `<span style="color:var(--text-dim)">${t('row').unknown}</span>`;
+  return new Date(unixSeconds * 1000).toISOString().slice(0, 10);
 }
 
 async function loadSummary() {
@@ -234,13 +410,13 @@ async function loadSummary() {
     else counts[r.decision] = (counts[r.decision] || 0) + r.n;
   }
   el('summary').innerHTML = `
-    <span><b>${counts.total}</b> amis au total</span>
-    <span class="pill undecided">${counts.undecided || 0} indécis</span>
-    <span class="pill keep">${counts.keep || 0} garder</span>
-    <span class="pill remove">${counts.remove || 0} retirer</span>
-    <span class="pill applied">${counts.applied || 0} déjà appliqués</span>
+    <span><b>${counts.total}</b></span>
+    <span class="pill undecided">${counts.undecided || 0} ${t('row').undecided.toLowerCase()}</span>
+    <span class="pill keep">${counts.keep || 0} ${t('row').keep.toLowerCase()}</span>
+    <span class="pill remove">${counts.remove || 0} ${t('row').remove.toLowerCase()}</span>
+    <span class="pill applied">${counts.applied || 0} ✓</span>
   `;
-  el('pendingCount').textContent = counts.remove || 0;
+  el('dangerDesc').textContent = t('dangerDesc')(counts.remove || 0);
 }
 
 function buildQuery(extra) {
@@ -255,18 +431,19 @@ function buildQuery(extra) {
 async function loadRows() {
   const res = await fetch('/api/friends?' + buildQuery());
   const { total, rows } = await res.json();
-  el('matchCount').textContent = `${total} correspondance(s)`;
-  el('pageInfo').textContent = `Page ${state.page} / ${Math.max(1, Math.ceil(total / state.pageSize))} (${total} résultats)`;
+  el('matchCount').textContent = t('unit').matches(total);
+  el('pageInfo').textContent = t('unit').page(state.page, Math.max(1, Math.ceil(total / state.pageSize)), total);
 
   el('rows').innerHTML = rows.map((f) => {
     const applied = !!f.applied_at;
     const rowCls = applied ? 'applied' : '';
+    const r = t('row');
     const badge = applied
-      ? `<span class="applied-badge ${f.apply_success ? 'ok' : 'fail'}">${f.apply_success ? 'Appliqué ✓' : 'Échec ✗'}</span>`
+      ? `<span class="applied-badge ${f.apply_success ? 'ok' : 'fail'}">${f.apply_success ? r.appliedOk : r.appliedFail}</span>`
       : `<div class="actions">
-          <button data-id="${f.id}" data-set="keep" class="${f.decision === 'keep' ? 'active-keep' : ''}">Garder</button>
-          <button data-id="${f.id}" data-set="remove" class="${f.decision === 'remove' ? 'active-remove' : ''}">Retirer</button>
-          <button data-id="${f.id}" data-set="">Indécis</button>
+          <button data-id="${f.id}" data-set="keep" class="${f.decision === 'keep' ? 'active-keep' : ''}">${r.keep}</button>
+          <button data-id="${f.id}" data-set="remove" class="${f.decision === 'remove' ? 'active-remove' : ''}">${r.remove}</button>
+          <button data-id="${f.id}" data-set="">${r.undecided}</button>
         </div>`;
     return `
       <tr class="${rowCls}">
@@ -312,14 +489,14 @@ el('prevPage').addEventListener('click', () => { if (state.page > 1) { state.pag
 el('nextPage').addEventListener('click', () => { state.page++; loadRows(); });
 
 async function bulkSet(setTo) {
-  const label = setTo === 'keep' ? 'Garder' : setTo === 'remove' ? 'Retirer' : 'Indécis';
-  if (!confirm(`Marquer TOUS les résultats filtrés actuels (${el('matchCount').textContent}) comme "${label}" ?`)) return;
+  const label = setTo === 'keep' ? t('row').keep : setTo === 'remove' ? t('row').remove : t('row').undecided;
+  if (!confirm(t('confirmBulk')(label, el('matchCount').textContent))) return;
   const res = await fetch('/api/bulk-decision', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ search: state.search, decision: state.decision, status: state.status, setTo }),
   });
   const data = await res.json();
-  alert(`${data.updated} ami(s) mis à jour.`);
+  alert(t('unit').updated(data.updated));
   loadRows();
   loadSummary();
 }
@@ -339,66 +516,69 @@ el('toggleSetup').addEventListener('click', () => {
   panel.style.display = show ? 'block' : 'none';
   if (show) loadStatus();
 });
-el('refreshStatus').addEventListener('click', loadStatus);
-
-function statusBadge(info, okLabel, missingLabel) {
-  if (!info.exists) return `<span class="status missing">${missingLabel}</span>`;
-  const date = new Date(info.mtime).toLocaleString();
-  return `<span class="status ok">${okLabel} — ${date}</span>`;
-}
 
 async function loadStatus() {
   const res = await fetch('/api/status');
   const s = await res.json();
-  el('status-auth').outerHTML = `<span class="status ${s.auth.exists ? 'ok' : 'missing'}" id="status-auth">${
-    s.auth.exists ? 'auth.json présent — ' + new Date(s.auth.mtime).toLocaleString() : 'auth.json absent'
-  }</span>`;
-  el('status-friendsJson').outerHTML = `<span class="status ${s.friendsJson.exists ? 'ok' : 'missing'}" id="status-friendsJson">${
-    s.friendsJson.exists ? 'friends.json présent — ' + new Date(s.friendsJson.mtime).toLocaleString() : 'friends.json absent'
-  }</span>`;
-  el('status-db').outerHTML = `<span class="status ${s.db.exists ? 'ok' : 'missing'}" id="status-db">${
-    s.db.exists ? `friends.db présent — ${s.db.count} ligne(s)` : 'friends.db absent'
-  }</span>`;
+  el('status-auth').className = `status ${s.auth.exists ? 'ok' : 'missing'}`;
+  el('status-auth').textContent = s.auth.exists ? new Date(s.auth.mtime).toLocaleString() : '—';
+  el('status-friendsJson').className = `status ${s.friendsJson.exists ? 'ok' : 'missing'}`;
+  el('status-friendsJson').textContent = s.friendsJson.exists ? new Date(s.friendsJson.mtime).toLocaleString() : '—';
+  el('status-db').className = `status ${s.db.exists ? 'ok' : 'missing'}`;
+  el('status-db').textContent = s.db.exists ? `${s.db.count}` : '—';
 }
+
+const activeStreams = {};
+function runTask(name, logElId, { onDone, body } = {}) {
+  return fetch(`/api/run/${name}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
+  }).then(async (res) => {
+    if (res.status === 409) { alert(t('alreadyRunning')); return; }
+    const logEl = el(logElId);
+    logEl.style.display = 'block';
+    logEl.textContent = '';
+    if (activeStreams[name]) activeStreams[name].close();
+    const es = new EventSource(`/api/run/${name}/events`);
+    activeStreams[name] = es;
+    es.onmessage = (e) => {
+      logEl.textContent += JSON.parse(e.data) + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+    es.addEventListener('done', (e) => {
+      logEl.textContent += t('done')(e.data);
+      es.close();
+      if (onDone) onDone(Number(e.data));
+    });
+  });
+}
+
+el('runLogin').addEventListener('click', () => {
+  el('confirmLogin').style.display = 'inline-block';
+  runTask('login', 'log-login', { onDone: () => { el('confirmLogin').style.display = 'none'; loadStatus(); } });
+});
+el('confirmLogin').addEventListener('click', () => fetch('/api/login-confirm', { method: 'POST' }));
+el('runFetch').addEventListener('click', () => runTask('fetch', 'log-fetch', { onDone: () => loadStatus() }));
+el('runImport').addEventListener('click', () => runTask('import', 'log-import', { onDone: () => { loadStatus(); loadSummary(); loadRows(); } }));
 
 // --- Suppression réelle ---
 el('confirmText').addEventListener('input', () => {
-  el('applyBtn').disabled = el('confirmText').value !== 'OUI';
+  el('applyBtn').disabled = el('confirmText').value !== translations[lang].confirmWord;
 });
 
-let evtSource = null;
-
-el('applyBtn').addEventListener('click', async () => {
-  if (el('confirmText').value !== 'OUI') return;
-  if (!confirm('Dernière confirmation : lancer réellement la suppression sur Spectrum ?')) return;
+el('applyBtn').addEventListener('click', () => {
+  if (el('confirmText').value !== translations[lang].confirmWord) return;
+  if (!confirm(t('lastConfirm'))) return;
 
   const limitVal = parseInt(el('applyLimit').value, 10);
   const body = Number.isInteger(limitVal) && limitVal > 0 ? { limit: limitVal } : {};
 
-  const res = await fetch('/api/apply-run', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
-  if (res.status === 409) { alert('Une suppression est déjà en cours.'); return; }
-
   el('applyBtn').disabled = true;
   el('confirmText').value = '';
-  el('applyLog').style.display = 'block';
-  el('applyLog').textContent = '';
 
-  if (evtSource) evtSource.close();
-  evtSource = new EventSource('/api/apply-events');
-  evtSource.onmessage = (e) => {
-    el('applyLog').textContent += JSON.parse(e.data) + '\n';
-    el('applyLog').scrollTop = el('applyLog').scrollHeight;
-  };
-  evtSource.addEventListener('done', (e) => {
-    el('applyLog').textContent += `\n--- terminé (code ${e.data}) ---\n`;
-    evtSource.close();
-    loadSummary();
-    loadRows();
-  });
+  runTask('apply', 'applyLog', { body, onDone: () => { loadSummary(); loadRows(); } });
 });
 
+applyTranslations();
 loadSummary();
 loadRows();
 </script>

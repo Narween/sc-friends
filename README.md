@@ -15,15 +15,20 @@ Spectrum n'offre aucun outil pour trier/nettoyer une liste d'amis en masse
 l'API interne (`/api/spectrum/...`) découverte en interceptant le trafic
 réseau du site, pour permettre ce ménage hors de l'UI.
 
-## Prérequis
+Deux façons de l'utiliser : en ligne de commande (ci-dessous), ou comme une
+vraie appli desktop avec interface graphique (voir [Appli desktop
+(Electron)](#appli-desktop-electron) plus bas) — les deux partagent le même
+code et la même base SQLite.
+
+## Prérequis (usage CLI)
 
 ```bash
 npm install
 npx playwright install chromium
 ```
 
-Un binaire `sqlite3` doit être disponible dans le `PATH` (déjà présent sur la
-plupart des distributions Linux/macOS).
+SQLite est géré via `better-sqlite3` (module natif, pas besoin d'installer un
+binaire `sqlite3` séparé).
 
 ## Workflow
 
@@ -96,11 +101,10 @@ node mark-candidates.js --keep <id>             # force un ami précis en 'keep'
 
 ### Interface web locale (`server.js`)
 
-Alternative visuelle à `mark-candidates.js` : une petite appli web (recherche,
+Alternative visuelle à tout ce qui précède : une petite appli web (recherche,
 filtres, tri, décision par ami ou par lot filtré), branchée en direct sur
-`friends.db`. Elle ne fait que lire/écrire la colonne `decision` en local —
-**aucune suppression réelle n'y est déclenchable**, ça reste une action
-volontaire en ligne de commande (`apply-removals.js --confirm`).
+`friends.db`. Disponible en français et en anglais (sélecteur en haut à
+droite), avec un thème clair/sombre/système.
 
 ```bash
 node server.js
@@ -112,6 +116,20 @@ machine, ouvre un tunnel SSH puis va sur `http://localhost:3939` :
 ```bash
 ssh -L 3939:localhost:3939 <user>@<host>
 ```
+
+Le bouton **⚙ Remplir la base** donne accès à un panneau qui lance
+directement `login.js` / `fetch-friends.js` / `import-friends.js` (avec le
+log de chacun en direct) — plus besoin de terminal séparé pour ces étapes.
+Pour l'étape de connexion, un bouton **✅ Je suis connecté** apparaît une fois
+la fenêtre Chromium ouverte ; clique dessus une fois réellement connecté pour
+déclencher la sauvegarde de `auth.json`.
+
+Le bandeau rouge en bas de page permet de lancer la **suppression réelle**
+(équivalent de `apply-removals.js --confirm`) directement depuis la page :
+le bouton reste désactivé tant que tu n'as pas tapé `OUI` (respectivement
+`YES` en anglais) dans le champ de confirmation, et une confirmation
+supplémentaire est demandée avant le lancement. Le log de la suppression
+s'affiche en direct.
 
 Tu peux aussi éditer `friends.db` directement en SQL pour affiner :
 
@@ -134,6 +152,59 @@ Rejoue `POST /api/spectrum/friend/remove` pour chaque ami marqué `remove`,
 avec une pause de 1,5s entre chaque appel. Chaque ligne traitée est marquée
 `applied_at` immédiatement : une exécution interrompue peut être relancée
 sans risquer de redoubler les suppressions déjà faites.
+
+## Appli desktop (Electron)
+
+Le même outil, packagé comme une vraie appli desktop (`.exe` / `.dmg` /
+`.AppImage`) — double-clic, fenêtre native, aucun terminal requis. Les
+données (`auth.json`, `friends.json`, `friends.db`) vivent dans le dossier
+de configuration standard du système (`%APPDATA%` sur Windows, `~/Library/
+Application Support` sur macOS, `~/.config` sur Linux), pas dans le dossier
+d'installation.
+
+### Récupérer un installeur déjà construit
+
+Le workflow GitHub Actions (`.github/workflows/build.yml`) compile
+automatiquement les 3 plateformes sur de vrais runners Windows/macOS/Linux
+(pas de cross-compilation locale). Depuis l'onglet **Actions** du repo,
+lance le workflow manuellement (`workflow_dispatch`) ou pousse un tag
+`vX.Y.Z`, puis télécharge l'artefact correspondant à ton OS.
+
+### Lancer en mode développement
+
+```bash
+npm install
+PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium
+npm run electron
+```
+
+`npm run electron` reconstruit d'abord `better-sqlite3` pour l'ABI
+d'Electron (`electron-builder install-app-deps`), puis lance l'appli.
+
+### Construire l'installeur soi-même
+
+```bash
+npm run dist
+```
+
+Produit un installeur pour la plateforme courante dans `dist-electron/`.
+
+### ⚠ Piège local : deux ABI natives différentes
+
+`better-sqlite3` est un module natif compilé pour une version précise du
+runtime. Electron embarque son propre Node (ABI différente du Node système).
+Sur une même machine de dev, si tu alternes entre usage CLI (`node
+server.js`, `node apply-removals.js`...) et Electron (`npm run electron`),
+il faut recompiler entre les deux :
+
+```bash
+npm rebuild better-sqlite3          # revenir à l'ABI Node système (pour le CLI)
+npx electron-builder install-app-deps   # repasser à l'ABI Electron
+```
+
+Un utilisateur final n'a jamais à s'en soucier : l'installeur packagé
+embarque déjà le bon binaire, et le CI (Node 22 dans `build.yml`) gère ça
+automatiquement à chaque build.
 
 ## Fichiers annexes
 

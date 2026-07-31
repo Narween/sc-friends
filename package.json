@@ -2,6 +2,7 @@
   "name": "sc-friends",
   "private": true,
   "type": "commonjs",
+  "main": "electron/main.js",
   "scripts": {
     "login": "node login.js",
     "discover": "node discover-friends.js",
@@ -9,9 +10,49 @@
     "import": "node import-friends.js",
     "mark": "node mark-candidates.js",
     "apply": "node apply-removals.js",
-    "serve": "node server.js"
+    "serve": "node server.js",
+    "electron:rebuild": "electron-builder install-app-deps",
+    "electron": "npm run electron:rebuild && electron .",
+    "dist": "npm run electron:rebuild && electron-builder"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "playwright": "^1.62.1"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "org.scfriends.app",
+    "productName": "SC Friends",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "**/*",
+      "!dist-electron/**/*",
+      "!debug-*.png",
+      "!*.md",
+      "!.github/**/*",
+      "!auth.json",
+      "!friends.json",
+      "!friends.db*",
+      "!network-capture.json",
+      "!friends.candidate.json",
+      "!candidates*.json",
+      "!remove-log*.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    }
   }
 }

@@ -1,0 +1,53 @@
+name: Build desktop app
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            dist_args: --win
+          - os: macos-latest
+            dist_args: --mac
+          - os: ubuntu-latest
+            dist_args: --linux
+    runs-on: ${{ matrix.os }}
+    env:
+      # Chemin stable (dans node_modules/playwright-core) plutôt que le cache
+      # utilisateur par défaut, pour qu'electron-builder puisse l'embarquer
+      # comme n'importe quelle dépendance de node_modules.
+      PLAYWRIGHT_BROWSERS_PATH: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Rebuild native deps for Electron
+        run: npx electron-builder install-app-deps
+
+      - name: Build installer
+        run: npx electron-builder ${{ matrix.dist_args }} --publish=never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sc-friends-${{ matrix.os }}
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.dmg
+            dist-electron/*.AppImage
+          if-no-files-found: ignore

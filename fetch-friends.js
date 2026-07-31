@@ -6,10 +6,9 @@
 // headless et de dumper ce tableau brut dans friends.json.
 const fs = require('node:fs');
 const { chromium } = require('playwright');
+const { AUTH_FILE, FRIENDS_JSON_FILE } = require('./lib/paths');
 
 const START_URL = 'https://robertsspaceindustries.com/spectrum';
-const AUTH_FILE = 'auth.json';
-const OUTPUT_FILE = 'friends.json';
 
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -39,9 +38,9 @@ async function main() {
   }
 
   const friends = body.data.friends;
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(friends, null, 2));
+  fs.writeFileSync(FRIENDS_JSON_FILE, JSON.stringify(friends, null, 2));
 
-  console.log(`${friends.length} amis récupérés -> ${OUTPUT_FILE}`);
+  console.log(`${friends.length} amis récupérés -> ${FRIENDS_JSON_FILE}`);
 
   await browser.close();
 }

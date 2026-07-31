@@ -19,42 +19,33 @@
 //   node apply-removals.js --confirm       (exécute réellement)
 //   node apply-removals.js --confirm --limit 3   (teste sur un petit lot avant le reste)
 const fs = require('node:fs');
-const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
+const { getDb } = require('./lib/db');
+const { AUTH_FILE } = require('./lib/paths');
 
-const AUTH_FILE = 'auth.json';
 const FRIENDS_SETTINGS_URL = 'https://robertsspaceindustries.com/spectrum/settings/friends';
 const DELAY_MS = 2000;
 
 function parseArgs(argv) {
-  const args = { db: 'friends.db', confirm: false, limit: null };
+  const args = { confirm: false, limit: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--db') args.db = argv[++i];
-    else if (a === '--confirm') args.confirm = true;
+    if (a === '--confirm') args.confirm = true;
     else if (a === '--limit') args.limit = Number(argv[++i]);
   }
   return args;
-}
-
-function sqlJson(db, statement) {
-  const out = execFileSync('sqlite3', [db, '.mode json', statement]).toString().trim();
-  return out ? JSON.parse(out) : [];
-}
-function sqlExec(db, statement) {
-  execFileSync('sqlite3', [db, statement]);
-}
-function esc(v) {
-  return String(v).replace(/'/g, "''");
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const db = getDb();
 
-  const limitClause = args.limit ? ` LIMIT ${args.limit}` : '';
-  const pending = sqlJson(args.db, `SELECT id, nickname, displayname FROM friends WHERE decision='remove' AND applied_at IS NULL ORDER BY id${limitClause};`);
+  const limitClause = args.limit ? ` LIMIT ${Number(args.limit)}` : '';
+  const pending = db
+    .prepare(`SELECT id, nickname, displayname FROM friends WHERE decision='remove' AND applied_at IS NULL ORDER BY id${limitClause};`)
+    .all();
 
   console.log(`${pending.length} ami(s) marqué(s) 'remove' et pas encore appliqué(s) :`);
   pending.forEach((f) => console.log(`  - ${f.nickname} [id=${f.id}]`));
@@ -80,6 +71,10 @@ async function main() {
 
   await page.goto(FRIENDS_SETTINGS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
   const filterInput = await page.waitForSelector('input[placeholder="Filter friends"]', { timeout: 30000 });
+
+  const updateStmt = db.prepare(
+    `UPDATE friends SET applied_at=CURRENT_TIMESTAMP, apply_success=?, apply_response=? WHERE id=?;`
+  );
 
   let okCount = 0;
   for (const friend of pending) {
@@ -114,17 +109,14 @@ async function main() {
     if (ok) okCount++;
     console.log(`${ok ? 'OK  ' : 'FAIL'} ${friend.nickname} [id=${friend.id}] -> ${detail}`);
 
-    sqlExec(
-      args.db,
-      `UPDATE friends SET applied_at=CURRENT_TIMESTAMP, apply_success=${ok ? 1 : 0}, apply_response='${esc(detail)}' WHERE id='${esc(friend.id)}';`
-    );
+    updateStmt.run(ok ? 1 : 0, detail, friend.id);
 
     await sleep(DELAY_MS);
   }
 
   await browser.close();
 
-  console.log(`\n${okCount} / ${pending.length} suppressions réussies. État à jour dans ${args.db}.`);
+  console.log(`\n${okCount} / ${pending.length} suppressions réussies. État à jour dans friends.db.`);
 }
 
 main().catch((err) => {
