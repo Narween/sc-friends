@@ -20,13 +20,28 @@ if (!gotLock) {
 }
 
 function resolveBrowsersPath() {
-  // Playwright a été installé avec PLAYWRIGHT_BROWSERS_PATH=0 (voir
-  // package.json / CI) : les navigateurs vivent dans
-  // node_modules/playwright-core/.local-browsers, un chemin relatif stable
-  // qu'electron-builder embarque avec le reste de node_modules. On force la
-  // même valeur au runtime pour que Playwright les retrouve une fois
-  // packagé, sans tenter un téléchargement.
-  process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+  if (!app.isPackaged) {
+    // Hors paquet (dev) : pas d'asar du tout, la valeur spéciale "0" suffit
+    // (Playwright a été installé avec PLAYWRIGHT_BROWSERS_PATH=0, voir
+    // package.json / CI, donc les navigateurs vivent déjà dans
+    // node_modules/playwright-core/.local-browsers).
+    process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+    return;
+  }
+  // Packagé : on a vu Playwright échouer à retrouver Chromium même avec
+  // node_modules/playwright(-core) sorti de l'asar (asarUnpack) — la
+  // redirection transparente asar->asar.unpacked d'Electron n'est
+  // apparemment pas fiable à 100% pour ce cas d'usage (spawn d'un vrai
+  // exécutable, pas juste une lecture de fichier). On calcule donc le
+  // chemin réel nous-mêmes via process.resourcesPath, qui pointe toujours
+  // sur le vrai disque, sans jamais passer par un chemin "virtuel" *.asar.
+  process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    'playwright-core',
+    '.local-browsers'
+  );
 }
 
 function createWindow() {
