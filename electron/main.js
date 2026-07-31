@@ -3,10 +3,11 @@
 // friends.json, friends.db) vivent dans le dossier userData du système —
 // le seul emplacement garanti inscriptible pour une appli installée (ex:
 // Program Files sur Windows est en lecture seule pour l'utilisateur courant).
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, shell } = require('electron');
 const path = require('node:path');
 
 const PORT = 3939;
+const APP_ORIGIN = `http://127.0.0.1:${PORT}`;
 
 // Empêche deux instances de l'appli de tourner en même temps (un double-clic
 // accidentel, ou l'appli déjà ouverte en arrière-plan) : la deuxième
@@ -32,11 +33,41 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
     height: 1000,
+    // En dessous, le tableau/toolbar tronque ou superpose ses éléments.
+    minWidth: 1050,
+    minHeight: 650,
     title: 'sc-friends',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    webPreferences: {
+      // Valeurs par défaut d'Electron moderne, posées explicitement : pas
+      // d'accès Node.js depuis la page web, pas de désactivation du sandbox
+      // de rendu. On ne charge que notre propre serveur local, mais autant
+      // ne pas dépendre des défauts si une future version d'Electron change.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
   });
-  win.loadURL(`http://127.0.0.1:${PORT}`);
+
+  // Liens externes (GitHub, parrainage RSI...) : ouverts dans le vrai
+  // navigateur système, jamais dans une fenêtre Electron supplémentaire.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // Empêche la fenêtre principale de naviguer ailleurs que vers notre propre
+  // serveur local (au cas où un contenu injecté tenterait de rediriger la
+  // page vers un site distant).
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(APP_ORIGIN)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  win.loadURL(APP_ORIGIN);
 }
 
 if (gotLock) {

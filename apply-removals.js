@@ -22,6 +22,8 @@ const fs = require('node:fs');
 const { chromium } = require('playwright');
 const { getDb } = require('./lib/db');
 const { AUTH_FILE } = require('./lib/paths');
+const { log, err, lang } = require('./lib/log');
+const { t } = require('./lib/i18n');
 
 const FRIENDS_SETTINGS_URL = 'https://robertsspaceindustries.com/spectrum/settings/friends';
 const DELAY_MS = 2000;
@@ -47,23 +49,23 @@ async function main() {
     .prepare(`SELECT id, nickname, displayname FROM friends WHERE decision='remove' AND applied_at IS NULL ORDER BY id${limitClause};`)
     .all();
 
-  console.log(`${pending.length} ami(s) marqué(s) 'remove' et pas encore appliqué(s) :`);
+  log('cli.apply.pendingList', { count: pending.length });
   pending.forEach((f) => console.log(`  - ${f.nickname} [id=${f.id}]`));
 
   if (!args.confirm) {
-    console.log(`\nDRY-RUN : aucun appel réseau effectué. Relance avec --confirm pour exécuter réellement.`);
+    log('cli.apply.dryRun');
     return;
   }
   if (pending.length === 0) {
-    console.log('\nRien à appliquer.');
+    log('cli.apply.nothing');
     return;
   }
   if (!fs.existsSync(AUTH_FILE)) {
-    console.error(`Fichier ${AUTH_FILE} introuvable. Lance d'abord login.js.`);
+    err('cli.fetch.authMissing', { file: AUTH_FILE });
     process.exit(1);
   }
 
-  console.log(`\n--confirm passé : suppression réelle de ${pending.length} ami(s), pause ${DELAY_MS}ms entre chaque appel.\n`);
+  log('cli.apply.confirmed', { count: pending.length, delay: DELAY_MS });
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ storageState: AUTH_FILE, viewport: { width: 1600, height: 1000 } });
@@ -90,7 +92,7 @@ async function main() {
     const rowCount = await row.count();
 
     if (rowCount !== 1) {
-      detail = `ligne ambiguë ou introuvable (${rowCount} correspondance(s))`;
+      detail = t(lang, 'cli.apply.rowNotFound', { count: rowCount });
     } else {
       const unfriendBtn = row.locator('.table-cell.action');
       try {
@@ -101,8 +103,8 @@ async function main() {
         const body = await response.json().catch(() => null);
         ok = body?.success === 1;
         detail = JSON.stringify(body);
-      } catch (err) {
-        detail = String(err);
+      } catch (e) {
+        detail = String(e);
       }
     }
 
@@ -116,10 +118,10 @@ async function main() {
 
   await browser.close();
 
-  console.log(`\n${okCount} / ${pending.length} suppressions réussies. État à jour dans friends.db.`);
+  log('cli.apply.summary', { ok: okCount, total: pending.length });
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((e) => {
+  console.error(e);
   process.exit(1);
 });

@@ -8,6 +8,9 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { getDb } = require('./lib/db');
 const { AUTH_FILE, FRIENDS_JSON_FILE, DB_FILE, LOGIN_SIGNAL_FILE } = require('./lib/paths');
+const { t, available } = require('./lib/i18n');
+
+const I18N_DIR = path.join(__dirname, 'i18n');
 
 const PORT = Number(process.env.PORT || 3939);
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -86,11 +89,42 @@ function serveStatic(res, filePath, contentType) {
   });
 }
 
+function isTrustedOrigin(req) {
+  // Le serveur n'écoute qu'en local, mais rien n'empêche une page web
+  // malveillante ouverte dans le même navigateur d'envoyer une requête vers
+  // 127.0.0.1:PORT (CSRF "localhost"). Comme cette appli peut déclencher de
+  // vraies suppressions d'amis, on vérifie que les requêtes qui modifient
+  // l'état viennent bien de notre propre page (Origin/Referer sur notre
+  // origine), pas d'un site tiers.
+  const origin = req.headers.origin || req.headers.referer;
+  if (!origin) return true; // requêtes locales sans en-tête (curl, scripts) : pas de navigateur tiers impliqué
+  try {
+    const originUrl = new URL(origin);
+    return (originUrl.hostname === '127.0.0.1' || originUrl.hostname === 'localhost') && originUrl.port === String(PORT);
+  } catch {
+    return false;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  if (req.method === 'POST' && !isTrustedOrigin(req)) {
+    return sendJson(res, 403, { error: 'forbidden origin' });
+  }
+
   if (req.method === 'GET' && url.pathname === '/') {
     return serveStatic(res, path.join(PUBLIC_DIR, 'index.html'), 'text/html; charset=utf-8');
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/languages') {
+    const langs = available().map((code) => ({ code, name: t(code, 'langName') }));
+    return sendJson(res, 200, langs);
+  }
+
+  const i18nMatch = url.pathname.match(/^\/i18n\/([a-z]{2,5})\.json$/);
+  if (req.method === 'GET' && i18nMatch && available().includes(i18nMatch[1])) {
+    return serveStatic(res, path.join(I18N_DIR, `${i18nMatch[1]}.json`), 'application/json; charset=utf-8');
   }
 
   if (req.method === 'GET' && url.pathname === '/api/about') {
@@ -214,7 +248,14 @@ const server = http.createServer(async (req, res) => {
     // node système sur la machine de l'utilisateur final).
     const child = spawn(process.execPath, args, {
       cwd: __dirname,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        // Langue active côté navigateur, transmise au script pour que ses
+        // logs (visibles dans le panneau SSE) parlent la même langue que
+        // l'interface plutôt qu'une langue fixée en dur.
+        SC_FRIENDS_LANG: available().includes(body.lang) ? body.lang : 'fr',
+      },
     });
     const onData = (chunk) => chunk.toString().split('\n').filter(Boolean).forEach((l) => broadcastLine(name, l));
     child.stdout.on('data', onData);
@@ -250,15 +291,33 @@ const server = http.createServer(async (req, res) => {
   res.end('Not found');
 });
 
+// On ne sait pas encore quelle langue l'utilisateur préfère à ce stade (page
+// pas encore chargée) : ces deux messages système s'affichent dans TOUTES
+// les langues disponibles (boucle sur available(), pas de liste FR/EN codée
+// en dur — ajouter une langue dans i18n/ suffit, rien à changer ici).
+function allLangs(key, vars) {
+  return available()
+    .map((code) => t(code, key, vars))
+    .join('\n\n');
+}
+
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Le port ${PORT} est déjà utilisé par un autre processus (une autre instance de l'appli, ou un autre programme). Ferme-le puis relance.`);
+    const message = allLangs('cli.server.portInUse', { port: PORT });
+    // Dans l'appli packagée, la console n'est pas visible (pas de terminal
+    // sur Windows) : on affiche une vraie boîte de dialogue native.
+    if (process.versions.electron) {
+      const { dialog } = require('electron');
+      dialog.showErrorBox('SC Friends', message);
+    } else {
+      console.error(message);
+    }
     process.exit(1);
   }
   throw err;
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Interface locale : http://127.0.0.1:${PORT}`);
-  console.log(`Depuis une autre machine : ssh -L ${PORT}:localhost:${PORT} <user>@<host>  puis ouvre http://localhost:${PORT}`);
+  console.log(allLangs('cli.server.listening', { port: PORT }));
+  console.log(allLangs('cli.server.tunnelHint', { port: PORT }));
 });

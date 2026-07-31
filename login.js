@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const { AUTH_FILE, LOGIN_SIGNAL_FILE } = require('./lib/paths');
+const { log } = require('./lib/log');
 
 const START_URL = 'https://robertsspaceindustries.com/connect?jumpto=/spectrum';
 
@@ -21,9 +22,9 @@ async function main() {
 
   await page.goto(START_URL, { waitUntil: 'domcontentloaded' });
 
-  console.log('\nUne fenêtre Chromium est ouverte sur Spectrum.');
-  console.log('Connecte-toi normalement (identifiants + éventuel 2FA).');
-  console.log(`En attente du signal (${LOGIN_SIGNAL_FILE})...\n`);
+  log('cli.login.windowOpen');
+  log('cli.login.instructions');
+  log('cli.login.waitingSignal', { file: LOGIN_SIGNAL_FILE });
 
   while (!fs.existsSync(LOGIN_SIGNAL_FILE)) {
     await sleep(1000);
@@ -31,7 +32,7 @@ async function main() {
   fs.rmSync(LOGIN_SIGNAL_FILE, { force: true });
 
   await context.storageState({ path: AUTH_FILE });
-  console.log(`\nSession sauvegardée dans ${AUTH_FILE}.`);
+  log('cli.login.sessionSaved', { file: AUTH_FILE });
 
   await browser.close();
 }

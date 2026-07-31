@@ -7,12 +7,13 @@
 const fs = require('node:fs');
 const { chromium } = require('playwright');
 const { AUTH_FILE, FRIENDS_JSON_FILE } = require('./lib/paths');
+const { log, err } = require('./lib/log');
 
 const START_URL = 'https://robertsspaceindustries.com/spectrum';
 
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
-    console.error(`Fichier ${AUTH_FILE} introuvable. Lance d'abord login.js.`);
+    err('cli.fetch.authMissing', { file: AUTH_FILE });
     process.exit(1);
   }
 
@@ -31,7 +32,7 @@ async function main() {
   const body = await response.json();
 
   if (!body?.success || !Array.isArray(body?.data?.friends)) {
-    console.error('Réponse inattendue (pas de tableau data.friends) :');
+    err('cli.fetch.unexpectedResponse');
     console.error(JSON.stringify(body, null, 2).slice(0, 2000));
     await browser.close();
     process.exit(1);
@@ -40,12 +41,12 @@ async function main() {
   const friends = body.data.friends;
   fs.writeFileSync(FRIENDS_JSON_FILE, JSON.stringify(friends, null, 2));
 
-  console.log(`${friends.length} amis récupérés -> ${FRIENDS_JSON_FILE}`);
+  log('cli.fetch.done', { count: friends.length, file: FRIENDS_JSON_FILE });
 
   await browser.close();
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((e) => {
+  console.error(e);
   process.exit(1);
 });

@@ -9,6 +9,8 @@
 //   node mark-candidates.js --reset                         (remet decision=NULL pour tout ce qui n'est pas encore appliqué)
 //   node mark-candidates.js --keep <id>                      (force decision='keep' pour un ami précis)
 const { getDb } = require('./lib/db');
+const { log, err, lang } = require('./lib/log');
+const { t } = require('./lib/i18n');
 
 function parseArgs(argv) {
   const args = { months: null, anyStatus: false, allowCommonOrg: false, reset: false, keep: null };
@@ -24,12 +26,13 @@ function parseArgs(argv) {
 }
 
 function summary(db) {
+  const undecidedLabel = `(${t(lang, 'row.undecided')})`;
   const rows = db
-    .prepare(`SELECT COALESCE(decision, '(indécis)') as decision, COUNT(*) as n FROM friends WHERE applied_at IS NULL GROUP BY decision;`)
-    .all();
+    .prepare(`SELECT COALESCE(decision, ?) as decision, COUNT(*) as n FROM friends WHERE applied_at IS NULL GROUP BY decision;`)
+    .all(undecidedLabel);
   console.table(rows);
   const applied = db.prepare(`SELECT COUNT(*) as n FROM friends WHERE applied_at IS NOT NULL;`).get().n;
-  console.log(`(${applied} ami(s) déjà appliqué(s) précédemment, non recomptés ci-dessus)`);
+  log('cli.mark.appliedCount', { count: applied });
 }
 
 function main() {
@@ -38,19 +41,19 @@ function main() {
 
   if (args.reset) {
     db.prepare(`UPDATE friends SET decision=NULL, decided_at=NULL WHERE applied_at IS NULL;`).run();
-    console.log('Décisions réinitialisées (hors amis déjà appliqués).');
+    log('cli.mark.reset');
     summary(db);
     return;
   }
 
   if (args.keep) {
     db.prepare(`UPDATE friends SET decision='keep', decided_at=CURRENT_TIMESTAMP WHERE id=?;`).run(args.keep);
-    console.log(`id=${args.keep} marqué 'keep'.`);
+    log('cli.mark.keepSet', { id: args.keep });
     return;
   }
 
   if (!args.months) {
-    console.error('Usage: node mark-candidates.js --months <N> [--any-status] [--allow-common-org] | --reset | --keep <id>');
+    err('cli.mark.usage');
     process.exit(1);
   }
 
@@ -64,8 +67,12 @@ function main() {
   const where = conditions.join(' AND ');
   db.prepare(`UPDATE friends SET decision='remove', decided_at=CURRENT_TIMESTAMP WHERE ${where};`).run(...params);
 
-  console.log(`Seuil: inactif depuis plus de ${args.months} mois (avant ${new Date(cutoff * 1000).toISOString().slice(0, 10)})`);
-  console.log(`Filtres additionnels: statut=${args.anyStatus ? 'any' : 'offline uniquement'}, org commune=${args.allowCommonOrg ? 'autorisée' : 'aucune exigée'}`);
+  const cutoffDate = new Date(cutoff * 1000).toISOString().slice(0, 10);
+  log('cli.mark.threshold', { months: args.months, date: cutoffDate });
+  log('cli.mark.filters', {
+    status: args.anyStatus ? t(lang, 'cli.mark.statusAny') : t(lang, 'cli.mark.statusOfflineOnly'),
+    org: args.allowCommonOrg ? t(lang, 'cli.mark.orgAllowed') : t(lang, 'cli.mark.orgNoneRequired'),
+  });
   summary(db);
 }
 

@@ -206,6 +206,23 @@ Un utilisateur final n'a jamais à s'en soucier : l'installeur packagé
 embarque déjà le bon binaire, et le CI (Node 22 dans `build.yml`) gère ça
 automatiquement à chaque build.
 
+## Traduire l'appli (i18n)
+
+Toutes les chaînes traduisibles — interface web et messages des scripts CLI —
+vivent dans `i18n/<code>.json` (un fichier par langue, mêmes clés partout).
+Aucune modification de code n'est nécessaire pour ajouter une langue :
+
+1. Copie `i18n/en.json` vers `i18n/<code>.json` (ex: `de.json`) et traduis les
+   valeurs. Les `{placeholder}` (ex: `{count}`, `{file}`) doivent rester tels
+   quels — ils sont substitués au moment de l'affichage.
+2. Renseigne `"langName"` (le nom de la langue affiché dans le sélecteur).
+3. C'est tout : l'interface web détecte le fichier via `GET /api/languages`
+   et ajoute automatiquement un bouton pour la nouvelle langue ; les scripts
+   CLI la reconnaissent via `SC_FRIENDS_LANG=<code>`.
+
+Les clés préfixées `cli.*` sont les messages des scripts (`login.js`,
+`fetch-friends.js`...) ; les autres sont l'interface web (`public/index.html`).
+
 ## Fichiers annexes
 
 - `discover-friends.js` — outil de découverte réseau utilisé pour identifier
@@ -222,5 +239,11 @@ automatiquement à chaque build.
   / `remove-log*.json` sont dans `.gitignore` : ils contiennent des données de
   session et des données personnelles (les tiennes et celles de tes amis).
 - Aucune suppression n'a lieu sans `--confirm` explicite.
+- Le serveur local (`server.js`) n'écoute que sur `127.0.0.1` et vérifie
+  l'en-tête `Origin`/`Referer` sur les requêtes qui modifient l'état, pour
+  éviter qu'une page web tierce ouverte dans le même navigateur ne déclenche
+  des actions à ton insu (CSRF local).
+- Toutes les requêtes SQL utilisent des paramètres liés (`?`), jamais de
+  concaténation de chaînes.
 - Le retrait d'un ami est visible côté ami concerné — ce n'est pas anodin,
   d'où le workflow en plusieurs étapes avec relecture avant application.

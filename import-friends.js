@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const { getDb } = require('./lib/db');
 const { FRIENDS_JSON_FILE } = require('./lib/paths');
+const { log } = require('./lib/log');
 
 function main() {
   const friends = JSON.parse(fs.readFileSync(FRIENDS_JSON_FILE, 'utf8'));
@@ -42,7 +43,7 @@ function main() {
   importAll(friends);
 
   const total = db.prepare('SELECT COUNT(*) as n FROM friends').get().n;
-  console.log(`Import terminé -> friends.db (${total} ligne(s) au total).`);
+  log('cli.import.done', { count: total });
 }
 
 main();
