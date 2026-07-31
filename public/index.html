@@ -126,6 +126,9 @@
   .status.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .status.missing { background: rgba(229,72,77,0.15); color: var(--remove); }
   .task-log { margin-top: 8px; max-height: 160px; overflow-y: auto; background: #0a1119; border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; display: none; }
+  .empty-banner { background: rgba(63,169,245,0.12); border: 1px solid rgba(63,169,245,0.4); color: var(--accent); padding: 10px 14px; border-radius: 6px; font-weight: 600; margin: 0 0 14px; }
+  #toggleSetup.attention { background: var(--accent); color: #06202f; border-color: var(--accent); animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(63,169,245,0.5); } 50% { box-shadow: 0 0 0 6px rgba(63,169,245,0); } }
 
   .panel.danger { border-color: rgba(229,72,77,0.4); }
   .panel.danger h2 { color: var(--remove); }
@@ -162,6 +165,7 @@
 <section class="panel" id="setupPanel" style="display:none">
   <h2 data-i18n="setup.title"></h2>
   <p class="dim" data-i18n="setup.intro"></p>
+  <p class="empty-banner" id="emptyBanner" data-i18n="setup.emptyBanner" style="display:none"></p>
   <ul class="setup-steps">
     <li>
       <div class="step-row">
@@ -481,6 +485,19 @@ async function loadStatus() {
   el('status-friendsJson').textContent = s.friendsJson.exists ? new Date(s.friendsJson.mtime).toLocaleString() : '—';
   el('status-db').className = `status ${s.db.exists ? 'ok' : 'missing'}`;
   el('status-db').textContent = s.db.exists ? `${s.db.count}` : '—';
+
+  // Étapes verrouillées dans l'ordre : pas la peine de récupérer sans être
+  // connecté, ni d'importer sans avoir récupéré.
+  el('runFetch').disabled = !s.auth.exists;
+  el('runFetch').title = s.auth.exists ? '' : t('setup.stepLocked');
+  el('runImport').disabled = !s.friendsJson.exists;
+  el('runImport').title = s.friendsJson.exists ? '' : t('setup.stepLocked');
+
+  const isEmpty = !s.db.exists || !s.db.count;
+  el('emptyBanner').style.display = isEmpty ? 'block' : 'none';
+  el('toggleSetup').classList.toggle('attention', isEmpty);
+
+  return isEmpty;
 }
 
 const activeStreams = {};
@@ -539,6 +556,9 @@ el('applyBtn').addEventListener('click', () => {
   applyTranslations();
   loadSummary();
   loadRows();
+
+  const isEmpty = await loadStatus();
+  if (isEmpty) el('setupPanel').style.display = 'block';
 })();
 </script>
 </body>
