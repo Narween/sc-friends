@@ -32,7 +32,10 @@
     "directories": {
       "output": "dist-electron"
     },
-    "asar": false,
+    "asarUnpack": [
+      "node_modules/playwright-core/.local-browsers/**/*",
+      "node_modules/better-sqlite3/build/Release/*.node"
+    ],
     "files": [
       "**/*",
       "!dist-electron/**/*",
