@@ -1,5 +1,8 @@
 {
   "name": "sc-friends",
+  "version": "1.0.0",
+  "description": "Export and clean up your Star Citizen Spectrum friends list",
+  "author": "Narween",
   "private": true,
   "type": "commonjs",
   "main": "electron/main.js",
