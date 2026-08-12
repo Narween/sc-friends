@@ -230,16 +230,21 @@ const server = http.createServer(async (req, res) => {
     if (!task) return sendJson(res, 404, { error: 'unknown task' });
     const st = getTaskState(name);
     if (st.running) return sendJson(res, 409, { error: 'already running' });
+    // Posé tout de suite, avant le moindre await : sinon deux requêtes
+    // arrivées presque en même temps passent toutes les deux la vérification
+    // ci-dessus avant que l'une d'elles n'ait eu la chance de poser le
+    // verrou, et on se retrouve avec deux exécutions concurrentes de la même
+    // tâche (dangereux pour "apply", qui pilote un vrai navigateur contre le
+    // vrai site).
+    st.running = true;
+    st.log = [];
+    st.exitCode = null;
 
     const body = await readBody(req);
     const args = [path.join(__dirname, task.script), ...(task.baseArgs || [])];
     if (name === 'apply' && Number.isInteger(body.limit) && body.limit > 0) {
       args.push('--limit', String(body.limit));
     }
-
-    st.running = true;
-    st.log = [];
-    st.exitCode = null;
 
     // process.execPath + ELECTRON_RUN_AS_NODE : fonctionne aussi bien en
     // usage CLI pur (execPath = binaire node, la variable est ignorée) que
