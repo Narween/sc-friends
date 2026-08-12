@@ -39,6 +39,7 @@
   "table.decision": "Décision",
   "pagination.prev": "← Précédent",
   "pagination.next": "Suivant →",
+  "pagination.all": "Tout afficher",
   "danger.title": "⚠ Suppression réelle sur Spectrum",
   "danger.limitLabel": "Limiter à (optionnel, pour tester)",
   "danger.confirmLabel": "Tape OUI en majuscules pour activer le bouton :",

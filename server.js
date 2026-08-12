@@ -175,9 +175,13 @@ const server = http.createServer(async (req, res) => {
     const status = url.searchParams.get('status') || 'all';
     const sort = ALLOWED_SORT.includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'presence_since';
     const order = url.searchParams.get('order') === 'desc' ? 'DESC' : 'ASC';
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const pageSize = Math.min(200, parseInt(url.searchParams.get('pageSize') || '50', 10));
-    const offset = (page - 1) * pageSize;
+    const pageSizeRaw = url.searchParams.get('pageSize') || '50';
+    // 'all' -> LIMIT -1 (SQLite's own "no limit" syntax) instead of some
+    // arbitrarily large number, and there's only ever one page in that case.
+    const showAll = pageSizeRaw === 'all';
+    const page = showAll ? 1 : Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const pageSize = showAll ? -1 : Math.min(400, Math.max(1, parseInt(pageSizeRaw, 10) || 50));
+    const offset = showAll ? 0 : (page - 1) * pageSize;
 
     const db = getDb();
     const { where, params } = buildWhere(db, { search, decision, status });

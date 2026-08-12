@@ -246,6 +246,16 @@
     <button id="prevPage" data-i18n="pagination.prev"></button>
     <span id="pageInfo"></span>
     <button id="nextPage" data-i18n="pagination.next"></button>
+    <select id="pageSize">
+      <option value="10">10</option>
+      <option value="25">25</option>
+      <option value="50" selected>50</option>
+      <option value="100">100</option>
+      <option value="200">200</option>
+      <option value="300">300</option>
+      <option value="400">400</option>
+      <option value="all" data-i18n="pagination.all"></option>
+    </select>
   </div>
 
   <section class="panel danger">
@@ -375,7 +385,11 @@ async function loadRows() {
   const res = await fetch('/api/friends?' + buildQuery());
   const { total, rows } = await res.json();
   el('matchCount').textContent = t('unit.matches', { n: total });
-  el('pageInfo').textContent = t('unit.page', { p: state.page, tot: Math.max(1, Math.ceil(total / state.pageSize)), total });
+  const showAll = state.pageSize === 'all';
+  const totalPages = showAll ? 1 : Math.max(1, Math.ceil(total / state.pageSize));
+  el('pageInfo').textContent = t('unit.page', { p: showAll ? 1 : state.page, tot: totalPages, total });
+  el('prevPage').disabled = showAll || state.page <= 1;
+  el('nextPage').disabled = showAll || state.page >= totalPages;
 
   el('rows').innerHTML = rows.map((f) => {
     const applied = !!f.applied_at;
@@ -429,6 +443,12 @@ el('orderBtn').addEventListener('click', () => {
 });
 el('prevPage').addEventListener('click', () => { if (state.page > 1) { state.page--; loadRows(); } });
 el('nextPage').addEventListener('click', () => { state.page++; loadRows(); });
+el('pageSize').addEventListener('change', () => {
+  const v = el('pageSize').value;
+  state.pageSize = v === 'all' ? 'all' : parseInt(v, 10);
+  state.page = 1;
+  loadRows();
+});
 
 async function bulkSet(setTo) {
   const label = setTo === 'keep' ? t('row.keep') : setTo === 'remove' ? t('row.remove') : t('row.undecided');

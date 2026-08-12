@@ -39,6 +39,7 @@
   "table.decision": "Decision",
   "pagination.prev": "← Previous",
   "pagination.next": "Next →",
+  "pagination.all": "Show all",
   "danger.title": "⚠ Real deletion on Spectrum",
   "danger.limitLabel": "Limit to (optional, for testing)",
   "danger.confirmLabel": "Type YES in capitals to enable the button:",
