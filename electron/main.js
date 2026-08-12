@@ -109,6 +109,14 @@ if (gotLock) {
   app.whenReady().then(() => {
     process.env.SC_FRIENDS_DATA_DIR = app.getPath('userData');
     process.env.PORT = String(PORT);
+    // Packagé : __dirname (utilisé plus bas comme cwd des scripts enfants)
+    // pointe dans app.asar, un chemin virtuel que CreateProcess ne sait pas
+    // résoudre côté Windows (ENOENT trompeur, qui nomme l'exécutable alors
+    // que c'est le cwd le vrai coupable). process.resourcesPath pointe
+    // toujours sur un vrai dossier disque, quel que soit l'OS.
+    if (app.isPackaged) {
+      process.env.SC_FRIENDS_RESOURCES_PATH = process.resourcesPath;
+    }
     resolveBrowsersPath();
 
     // Démarre le serveur local dans ce même process (effet de bord : écoute

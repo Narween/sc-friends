@@ -246,8 +246,15 @@ const server = http.createServer(async (req, res) => {
     // packagé dans Electron (execPath = l'exe de l'appli, qui se comporte
     // alors comme un node autonome pour ce process enfant — pas besoin d'un
     // node système sur la machine de l'utilisateur final).
+    // cwd: en packagé, __dirname vit dans app.asar (chemin virtuel) — Windows
+    // ne sait pas y faire CreateProcess (ENOENT trompeur, qui nomme
+    // l'exécutable alors que c'est le cwd le vrai coupable). Les scripts
+    // enfants ne se servent pas du cwd pour localiser leurs fichiers (ils
+    // utilisent SC_FRIENDS_DATA_DIR, transmis via env plus bas), donc n'importe
+    // quel vrai dossier disque convient ; resourcesPath (posé par main.js
+    // uniquement en packagé) en est un, garanti.
     const child = spawn(process.execPath, args, {
-      cwd: __dirname,
+      cwd: process.env.SC_FRIENDS_RESOURCES_PATH || __dirname,
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
