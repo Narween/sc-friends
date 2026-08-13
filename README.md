@@ -17,6 +17,10 @@ What it does, concretely:
 3. **Lets you decide** who to keep and who to remove — locally, no impact on your real account at this stage
 4. **Applies** the chosen removals on Spectrum for real, only once you explicitly confirm
 
+The web interface adds more on top — connection history, main org, CSV
+export, auto-refresh... see [Beyond the basics](#local-web-interface-serverjs)
+below.
+
 📥 The easiest way to use it: **[download the desktop app](https://github.com/Narween/sc-friends/releases/latest)**
 (Windows/macOS/Linux, no technical setup required). A command-line usage is
 also available, see below.

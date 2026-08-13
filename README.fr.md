@@ -17,6 +17,10 @@ Ce que ça fait, concrètement :
 3. **Laisse-toi décider** qui garder et qui retirer — en local, aucun impact sur le vrai compte à ce stade
 4. **Applique** réellement les retraits choisis sur Spectrum, seulement quand tu confirmes explicitement
 
+L'interface web ajoute plus : historique de connexion, org principale,
+export CSV, auto-refresh... voir [Au-delà des bases](#interface-web-locale-serverjs)
+plus bas.
+
 📥 Le plus simple pour l'utiliser : **[télécharger l'appli desktop](https://github.com/Narween/sc-friends/releases/latest)**
 (Windows/macOS/Linux, aucune installation technique requise). Un usage en
 ligne de commande est aussi possible, voir plus bas.
