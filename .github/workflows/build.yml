@@ -46,15 +46,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sc-friends-${{ matrix.os }}
-          # *.yml (latest.yml, latest-linux.yml) et *.blockmap : métadonnées
-          # d'update lues par electron-updater (voir electron/main.js) —
-          # sans elles publiées à côté des installeurs sur la Release,
-          # l'auto-update Windows/Linux ne trouve jamais de nouvelle version.
+          # latest*.yml (latest.yml, latest-linux.yml, latest-mac.yml) et
+          # *.blockmap : métadonnées d'update lues par electron-updater (voir
+          # electron/main.js) — sans elles publiées à côté des installeurs sur
+          # la Release, l'auto-update Windows/Linux ne trouve jamais de
+          # nouvelle version. `latest*.yml` (pas `*.yml`) exclut volontairement
+          # builder-debug.yml, un fichier de debug interne d'electron-builder
+          # sans intérêt une fois publié.
           path: |
             dist-electron/*.exe
             dist-electron/*.dmg
             dist-electron/*.AppImage
-            dist-electron/*.yml
+            dist-electron/latest*.yml
             dist-electron/*.blockmap
           if-no-files-found: ignore
 
@@ -70,6 +73,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist-artifacts
+
+      # Vu une fois : le tag venait d'être poussé et l'API Releases de
+      # GitHub ne le "voyait" pas encore au moment où ce job démarrait,
+      # softprops/action-gh-release créait alors une release orpheline
+      # (draft, mal rattachée au tag) et l'étape suivante plantait sur un
+      # 404 en essayant de renommer un asset. Le download-artifact
+      # au-dessus prend déjà un peu de temps, mais pas garanti suffisant —
+      # cette pause l'est.
+      - name: Wait for the tag to be discoverable by the Releases API
+        run: sleep 30
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
