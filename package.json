@@ -28,7 +28,7 @@
   },
   "build": {
     "appId": "org.scfriends.app",
-    "productName": "SC Friends",
+    "productName": "SC-Friends",
     "directories": {
       "output": "dist-electron"
     },

@@ -18,7 +18,7 @@ const PKG_VERSION = require('../package.json').version;
 process.on('uncaughtException', (err) => {
   console.error('uncaughtException:', err);
   if (app.isReady()) {
-    dialog.showErrorBox('SC Friends — erreur inattendue / unexpected error', String(err?.stack || err));
+    dialog.showErrorBox('SC-Friends — erreur inattendue / unexpected error', String(err?.stack || err));
   }
 });
 

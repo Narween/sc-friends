@@ -40,7 +40,7 @@ function broadcastDone(name, code) {
   for (const res of st.sseClients) res.write(`event: done\ndata: ${code}\n\n`);
 }
 
-function buildWhere(db_, { search, decision, status }) {
+function buildWhere(db_, { search, decision, status, hasNotes, duplicates }) {
   const conditions = [];
   const params = [];
   if (search) {
@@ -56,6 +56,15 @@ function buildWhere(db_, { search, decision, status }) {
   if (status && status !== 'all') {
     conditions.push(`presence_status=?`);
     params.push(status);
+  }
+  if (hasNotes) {
+    conditions.push(`notes IS NOT NULL AND notes != ''`);
+  }
+  if (duplicates) {
+    // Même displayname porté par au moins 2 lignes distinctes : signe
+    // possible d'un ami retrouvé sous un nouveau handle (nickname) après un
+    // changement de pseudo RSI.
+    conditions.push(`displayname IN (SELECT displayname FROM friends GROUP BY displayname HAVING COUNT(*) > 1)`);
   }
   return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
 }
@@ -131,7 +140,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/about') {
     return sendJson(res, 200, {
       name: PKG.name,
-      productName: 'SC Friends',
+      productName: 'SC-Friends',
       version: PKG.version,
       description: PKG.description,
       repository: 'https://github.com/Narween/sc-friends',
@@ -160,6 +169,46 @@ const server = http.createServer(async (req, res) => {
       fs.unlink(tmpPath, () => {});
       return sendJson(res, 500, { error: String(e) });
     }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/export.csv') {
+    const search = url.searchParams.get('search') || '';
+    const decision = url.searchParams.get('decision') || 'all';
+    const status = url.searchParams.get('status') || 'all';
+    const hasNotes = url.searchParams.get('hasNotes') === '1';
+    const duplicates = url.searchParams.get('duplicates') === '1';
+    const db = getDb();
+    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates });
+    const rows = db
+      .prepare(
+        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, decision, notes
+         FROM friends ${where}
+         ORDER BY nickname ASC;`
+      )
+      .all(...params);
+    const csvEscape = (v) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'decision', 'notes'];
+    const lines = [header.join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.nickname, r.displayname, r.presence_status,
+        r.presence_since ? new Date(r.presence_since * 1000).toISOString() : '',
+        r.common_communities_count, r.decision || 'undecided', r.notes,
+      ].map(csvEscape).join(','));
+    }
+    // BOM en tête : sans lui, Excel devine souvent un mauvais encodage pour
+    // les caractères non-ASCII (pseudos accentués/UTF-8) et les affiche mal.
+    const body = '﻿' + lines.join('\r\n') + '\r\n';
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.writeHead(200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="sc-friends-export-${stamp}.csv"`,
+    });
+    res.end(body);
     return;
   }
 
@@ -199,6 +248,8 @@ const server = http.createServer(async (req, res) => {
     const search = url.searchParams.get('search') || '';
     const decision = url.searchParams.get('decision') || 'all';
     const status = url.searchParams.get('status') || 'all';
+    const hasNotes = url.searchParams.get('hasNotes') === '1';
+    const duplicates = url.searchParams.get('duplicates') === '1';
     const sort = ALLOWED_SORT.includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'presence_since';
     const order = url.searchParams.get('order') === 'desc' ? 'DESC' : 'ASC';
     const pageSizeRaw = url.searchParams.get('pageSize') || '50';
@@ -210,7 +261,7 @@ const server = http.createServer(async (req, res) => {
     const offset = showAll ? 0 : (page - 1) * pageSize;
 
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision, status });
+    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates });
     const total = db.prepare(`SELECT COUNT(*) as n FROM friends ${where};`).get(...params).n;
     const rows = db
       .prepare(
@@ -371,7 +422,7 @@ server.on('error', (err) => {
     // sur Windows) : on affiche une vraie boîte de dialogue native.
     if (process.versions.electron) {
       const { dialog } = require('electron');
-      dialog.showErrorBox('SC Friends', message);
+      dialog.showErrorBox('SC-Friends', message);
     } else {
       console.error(message);
     }
