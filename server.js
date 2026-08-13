@@ -170,12 +170,19 @@ function normalizeTags(raw) {
   return parts.join(',');
 }
 
-function buildWhere(db_, { search, decision, status, hasNotes, duplicates, tag }) {
+function buildWhere(db_, { search, decision, status, hasNotes, duplicates, tag, locationLang }) {
   const conditions = [];
   const params = [];
   if (search) {
     conditions.push(`(nickname LIKE ? OR displayname LIKE ? OR notes LIKE ? OR tags LIKE ?)`);
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (locationLang) {
+    // Un seul champ texte pour deux colonnes distinctes (location, langues
+    // parlées) — remplies uniquement après un scrape de profil (voir
+    // fetch-profiles.js), donc potentiellement vides pour beaucoup d'amis.
+    conditions.push(`(location LIKE ? OR languages LIKE ?)`);
+    params.push(`%${locationLang}%`, `%${locationLang}%`);
   }
   if (tag) {
     // Les tags sont stockés normalisés à l'écriture ("tag1,tag2", sans
@@ -332,11 +339,12 @@ async function handleRequest(req, res) {
     const hasNotes = url.searchParams.get('hasNotes') === '1';
     const duplicates = url.searchParams.get('duplicates') === '1';
     const tag = url.searchParams.get('tag') || '';
+    const locationLang = url.searchParams.get('locationLang') || '';
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag });
+    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag, locationLang });
     const rows = db
       .prepare(
-        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, friends.org_name, org_redacted, decision, notes, tags, enlisted_at,
+        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, friends.org_name, org_redacted, decision, notes, tags, enlisted_at, location, languages,
                 GROUP_CONCAT(affiliate_orgs.org_name, ', ') as affiliate_org_names
          FROM friends
          LEFT JOIN affiliate_orgs ON affiliate_orgs.friend_id = friends.id
@@ -349,14 +357,14 @@ async function handleRequest(req, res) {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'affiliate_orgs', 'enlisted', 'decision', 'notes', 'tags'];
+    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'affiliate_orgs', 'enlisted', 'location', 'languages', 'decision', 'notes', 'tags'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push([
         r.nickname, r.displayname, r.presence_status,
         r.presence_since ? new Date(r.presence_since * 1000).toISOString() : '',
         r.common_communities_count, r.org_redacted ? 'hidden/private' : (r.org_name || ''),
-        r.affiliate_org_names || '', r.enlisted_at || '',
+        r.affiliate_org_names || '', r.enlisted_at || '', r.location || '', r.languages || '',
         r.decision || 'undecided', r.notes, r.tags,
       ].map(csvEscape).join(','));
     }
@@ -436,7 +444,7 @@ async function handleRequest(req, res) {
     const search = url.searchParams.get('search') || '';
     const conditions = [];
     const params = [];
-    if (['presence', 'nickname', 'displayname', 'bio', 'languages', 'enlisted_at', 'affiliate_orgs'].includes(field)) {
+    if (['presence', 'nickname', 'displayname', 'bio', 'languages', 'enlisted_at', 'location', 'affiliate_orgs'].includes(field)) {
       conditions.push(`c.field = ?`);
       params.push(field);
     }
@@ -494,6 +502,7 @@ async function handleRequest(req, res) {
     const hasNotes = url.searchParams.get('hasNotes') === '1';
     const duplicates = url.searchParams.get('duplicates') === '1';
     const tag = url.searchParams.get('tag') || '';
+    const locationLang = url.searchParams.get('locationLang') || '';
     const sort = ALLOWED_SORT.includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'presence_since';
     const order = url.searchParams.get('order') === 'desc' ? 'DESC' : 'ASC';
     const pageSizeRaw = url.searchParams.get('pageSize') || '50';
@@ -505,16 +514,15 @@ async function handleRequest(req, res) {
     const offset = showAll ? 0 : (page - 1) * pageSize;
 
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag });
+    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag, locationLang });
     const total = db.prepare(`SELECT COUNT(*) as n FROM friends ${where};`).get(...params).n;
     const rows = db
       .prepare(
-        `SELECT friends.id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, friends.org_name, friends.org_url, org_redacted, decision, applied_at, apply_success, notes, tags, enlisted_at,
-                GROUP_CONCAT(affiliate_orgs.org_name, ', ') as affiliate_org_names
+        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, org_name, org_url, org_redacted, decision, applied_at, apply_success, notes, tags, enlisted_at, location, languages,
+                (SELECT json_group_array(json_object('name', a.org_name, 'url', a.org_url))
+                 FROM affiliate_orgs a WHERE a.friend_id = friends.id) as affiliate_orgs_json
          FROM friends
-         LEFT JOIN affiliate_orgs ON affiliate_orgs.friend_id = friends.id
          ${where}
-         GROUP BY friends.id
          ORDER BY ${sort} ${order} NULLS LAST
          LIMIT ? OFFSET ?;`
       )
@@ -545,10 +553,10 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/bulk-decision') {
-    const { search, decision: filterDecision, status, hasNotes, duplicates, tag, setTo } = await readBody(req);
+    const { search, decision: filterDecision, status, hasNotes, duplicates, tag, locationLang, setTo } = await readBody(req);
     if (![null, 'keep', 'remove'].includes(setTo)) return sendJson(res, 400, { error: 'invalid setTo' });
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision: filterDecision, status, hasNotes, duplicates, tag });
+    const { where, params } = buildWhere(db, { search, decision: filterDecision, status, hasNotes, duplicates, tag, locationLang });
     const fullWhere = where ? `${where} AND applied_at IS NULL` : 'WHERE applied_at IS NULL';
     const matched = db.prepare(`SELECT COUNT(*) as n FROM friends ${fullWhere};`).get(...params).n;
     db.prepare(`UPDATE friends SET decision=?, decided_at=? ${fullWhere};`).run(

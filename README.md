@@ -106,7 +106,7 @@ ever overwriting a decision already made (the `decision` column).
 | `notes` | free-text note, set from the web interface, included in search |
 | `tags` | comma-separated free-text tags ("org mate,streamer"), set from the web interface, included in search and filterable |
 | `bio`, `languages` | Spectrum's "signature" and spoken-language list, tracked for history only — not shown as their own columns in the table |
-| `enlisted_at`, `profile_fetched_at` | enlistment date and last-scrape timestamp from the friend's **public RSI profile page** (`fetch-profiles.js` — separate from everything else, see below) |
+| `enlisted_at`, `location`, `profile_fetched_at` | enlistment date, location (optional, can be blank), and last-scrape timestamp from the friend's **public RSI profile page** (`fetch-profiles.js` — separate from everything else, see below) |
 | `decision` | `NULL` (undecided) / `'keep'` / `'remove'` — **the only field that matters for step 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | audit trail |
 
@@ -181,18 +181,29 @@ Beyond the basics:
   with search and a type filter, instead of opening the history popup one
   friend at a time.
 - **Public profile scrape** (⚠ setup panel, separate from everything else):
-  fetches enlistment date and affiliate/secondary organizations from each
-  friend's public RSI profile page — two things the friends-list API used
-  everywhere else in this app simply doesn't expose, since it requires
+  fetches enlistment date, location, and affiliate/secondary organizations
+  from each friend's public RSI profile page — things the friends-list API
+  used everywhere else in this app simply doesn't expose, since it requires
   loading a *different* page (`/citizens/<handle>` and
-  `/citizens/<handle>/organizations`) per friend, ~2 requests each. Runs in
-  batches of 5 friends with a ~3-minute pause between batches — a full pass
-  over hundreds of friends realistically takes hours, by design (this is
-  real page-scraping against RSI, not an API call — going faster would look
-  like abuse). Resumable: tracks `profile_fetched_at` per friend and always
-  processes never-scraped friends first, so closing the app and running it
-  again later picks up where it left off rather than starting over. Enter a
-  number in the field to test on a small batch instead of everyone.
+  `/citizens/<handle>/organizations`) per friend, ~2 requests each. Location
+  is optional on RSI's side (not every citizen fills it in) — a blank one is
+  normal, not a failed scrape. Runs in batches of 5 friends with a
+  ~3-minute pause between batches — a full pass over hundreds of friends
+  realistically takes hours, by design (this is real page-scraping against
+  RSI, not an API call — going faster would look like abuse). Resumable:
+  tracks `profile_fetched_at` per friend and always processes never-scraped
+  friends first, so closing the app and running it again later picks up
+  where it left off rather than starting over. Enter a number in the field
+  to test on a small batch instead of everyone.
+- **Location / languages column**: shows the scraped location and spoken
+  languages (translated to the current UI language via the browser's own
+  `Intl.DisplayNames`, no extra data needed) side by side with everything
+  else, filterable by a dedicated free-text box in the toolbar (matches
+  either field). Both stay empty until at least one profile scrape has run.
+- **Affiliate orgs**: a small `<details>` disclosure under the main org
+  shows secondary/affiliate orgs when there are any, each linking to its
+  real org page — deliberately not a native `<select>`, which can't contain
+  clickable links.
 - **Tags**: free-text, comma-separated, per friend (e.g. "org mate,
   streamer") — filterable via the toolbar dropdown, included in search,
   exported in the CSV. Multi-word tags are supported; matching is

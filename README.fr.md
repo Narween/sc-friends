@@ -106,7 +106,7 @@ Schéma de la table `friends` :
 | `notes` | note libre, saisie depuis l'interface web, incluse dans la recherche |
 | `tags` | tags libres séparés par virgule ("org mate,streamer"), saisis depuis l'interface web, inclus dans la recherche et filtrables |
 | `bio`, `languages` | la "signature" et la liste de langues parlées de Spectrum, suivies uniquement pour l'historique — pas de colonne dédiée dans le tableau |
-| `enlisted_at`, `profile_fetched_at` | date d'enlistement et horodatage du dernier scrape, depuis la **page profil publique RSI** de l'ami (`fetch-profiles.js` — à part de tout le reste, voir plus bas) |
+| `enlisted_at`, `location`, `profile_fetched_at` | date d'enlistement, localisation (optionnelle, peut être vide) et horodatage du dernier scrape, depuis la **page profil publique RSI** de l'ami (`fetch-profiles.js` — à part de tout le reste, voir plus bas) |
 | `decision` | `NULL` (indécis) / `'keep'` / `'remove'` — **le seul champ qui compte pour l'étape 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | traçabilité |
 
@@ -184,20 +184,32 @@ Au-delà des bases :
   les amis, avec recherche et filtre par type, au lieu d'ouvrir le popup
   d'historique ami par ami.
 - **Scrape de profil public** (⚠ panneau de configuration, à part de tout le
-  reste) : récupère la date d'enlistement et les organisations
-  affiliées/secondaires depuis la page profil publique RSI de chaque ami —
-  deux infos que l'API liste d'amis, utilisée partout ailleurs dans
-  l'appli, n'expose tout simplement pas, puisque ça demande de charger une
-  page *différente* (`/citizens/<pseudo>` et
-  `/citizens/<pseudo>/organizations`) par ami, ~2 requêtes chacun. Tourne
-  par lots de 5 amis avec une pause d'environ 3 minutes entre les lots — un
-  passage complet sur des centaines d'amis prend réalistement des heures,
-  volontairement (c'est du vrai scraping de page contre RSI, pas un appel
-  API — aller plus vite ressemblerait à de l'abus). Reprenable : suit
+  reste) : récupère la date d'enlistement, la localisation et les
+  organisations affiliées/secondaires depuis la page profil publique RSI de
+  chaque ami — des infos que l'API liste d'amis, utilisée partout ailleurs
+  dans l'appli, n'expose tout simplement pas, puisque ça demande de charger
+  une page *différente* (`/citizens/<pseudo>` et
+  `/citizens/<pseudo>/organizations`) par ami, ~2 requêtes chacun. La
+  localisation est optionnelle côté RSI (tous les citoyens ne la
+  renseignent pas) — la voir vide est normal, pas un échec de scrape.
+  Tourne par lots de 5 amis avec une pause d'environ 3 minutes entre les
+  lots — un passage complet sur des centaines d'amis prend réalistement des
+  heures, volontairement (c'est du vrai scraping de page contre RSI, pas un
+  appel API — aller plus vite ressemblerait à de l'abus). Reprenable : suit
   `profile_fetched_at` par ami et traite toujours les jamais-scrapés en
   premier, donc fermer l'appli et relancer plus tard reprend là où c'était
   resté plutôt que de tout refaire. Mets un nombre dans le champ pour
   tester sur un petit lot au lieu de tout le monde.
+- **Colonne localisation / langues** : affiche la localisation et les
+  langues parlées récupérées (traduites dans la langue active de l'appli
+  via `Intl.DisplayNames` du navigateur, aucune donnée supplémentaire
+  nécessaire), dans sa propre colonne, filtrable via un champ texte libre
+  dédié dans la barre d'outils (matche l'un ou l'autre champ). Les deux
+  restent vides tant qu'aucun scrape de profil n'a tourné.
+- **Orgs affiliées** : un petit menu `<details>` sous l'org principale
+  affiche les orgs secondaires/affiliées quand il y en a, chacune pointant
+  vers sa vraie page d'org — volontairement pas un `<select>` natif, qui ne
+  peut pas contenir de liens cliquables.
 - **Tags** : texte libre, séparés par virgule, par ami (ex. "org mate,
   streamer") — filtrables via le menu déroulant de la barre d'outils,
   inclus dans la recherche, exportés dans le CSV. Les tags à plusieurs mots

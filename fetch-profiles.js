@@ -1,7 +1,8 @@
 // Scrape la page profil public RSI de chaque ami (pas l'API interne
 // Spectrum, une page HTML publique séparée) pour récupérer sa date
-// d'enlistement et ses orgs affiliées (secondaires) — deux infos que l'API
-// utilisée par fetch-friends.js n'expose pas du tout.
+// d'enlistement, sa localisation (optionnelle) et ses orgs affiliées
+// (secondaires) — des infos que l'API utilisée par fetch-friends.js
+// n'expose pas du tout.
 //
 // Deux pages HTML par ami (profil + onglet "organizations"), donc ~2x le
 // nombre d'amis en requêtes pour un passage complet. Volontairement très
@@ -37,12 +38,16 @@ function parseArgs(argv) {
   return args;
 }
 
-async function scrapeEnlisted(page, nickname) {
+async function scrapeProfile(page, nickname) {
   await page.goto(PROFILE_URL(nickname), { waitUntil: 'domcontentloaded', timeout: 30000 });
   return page.evaluate(() => {
     const entries = [...document.querySelectorAll('.entry')];
-    const entry = entries.find((e) => e.querySelector('.label')?.textContent.trim() === 'Enlisted');
-    return entry?.querySelector('.value')?.textContent.trim() || null;
+    const valueFor = (label) =>
+      entries.find((e) => e.querySelector('.label')?.textContent.trim() === label)?.querySelector('.value')?.textContent.trim() || null;
+    // "Location" est optionnel (un citoyen peut ne pas l'avoir renseigné),
+    // contrairement à "Enlisted" qui est toujours présent sur un profil
+    // valide — c'est ce dernier qui sert de signal fiable d'échec de scrape.
+    return { enlistedAt: valueFor('Enlisted'), location: valueFor('Location') };
   });
 }
 
@@ -88,9 +93,9 @@ async function main() {
     return;
   }
 
-  const getExisting = db.prepare(`SELECT enlisted_at FROM friends WHERE id=?;`);
+  const getExisting = db.prepare(`SELECT enlisted_at, location FROM friends WHERE id=?;`);
   const getExistingAffiliates = db.prepare(`SELECT org_name FROM affiliate_orgs WHERE friend_id=? ORDER BY org_name;`);
-  const updateFriend = db.prepare(`UPDATE friends SET enlisted_at=?, profile_fetched_at=? WHERE id=?;`);
+  const updateFriend = db.prepare(`UPDATE friends SET enlisted_at=?, location=?, profile_fetched_at=? WHERE id=?;`);
   const deleteAffiliates = db.prepare(`DELETE FROM affiliate_orgs WHERE friend_id=?;`);
   const insertAffiliate = db.prepare(
     `INSERT INTO affiliate_orgs (friend_id, org_name, org_url, org_rank) VALUES (?, ?, ?, ?);`
@@ -110,7 +115,7 @@ async function main() {
 
       for (const friend of batch) {
         try {
-          const enlistedAt = await scrapeEnlisted(page, friend.nickname);
+          const { enlistedAt, location } = await scrapeProfile(page, friend.nickname);
 
           // RSI affiche toujours "Enlisted" sur un profil valide (c'est lié
           // à la création du compte, jamais vide) — un null ici veut donc
@@ -122,7 +127,8 @@ async function main() {
           // de remplacer des orgs affiliées réelles par une liste vide, ou
           // une date d'enlistement connue par du vide — et on ne touche
           // pas profile_fetched_at, pour qu'il soit retenté au prochain
-          // passage.
+          // passage. "Location" reste optionnel : un null là ne déclenche
+          // rien de spécial, ce champ peut légitimement être vide.
           if (enlistedAt === null) {
             err('cli.profiles.error', {
               nickname: friend.nickname,
@@ -139,6 +145,9 @@ async function main() {
           if (existing && existing.enlisted_at !== enlistedAt) {
             logChange.run(friend.id, 'enlisted_at', enlistedAt, now);
           }
+          if (existing && existing.location !== location) {
+            logChange.run(friend.id, 'location', location, now);
+          }
           const prevNames = getExistingAffiliates.all(friend.id).map((r) => r.org_name).join(',');
           const newNames = affiliates.map((a) => a.name).sort().join(',');
           if (prevNames !== newNames) {
@@ -146,7 +155,7 @@ async function main() {
           }
 
           const tx = db.transaction(() => {
-            updateFriend.run(enlistedAt, now, friend.id);
+            updateFriend.run(enlistedAt, location, now, friend.id);
             deleteAffiliates.run(friend.id);
             for (const a of affiliates) insertAffiliate.run(friend.id, a.name, a.url, a.rank);
           });

@@ -131,8 +131,13 @@
   .org a { color: var(--accent); text-decoration: none; }
   .org a:hover { text-decoration: underline; }
   .org-redacted { color: var(--text-dim); font-style: italic; }
-  .affiliates-select { font-size: 11px; max-width: 140px; background: transparent; color: var(--text-dim); border: none; padding: 0; cursor: pointer; }
-  .enlisted { font-size: 11px; }
+  .affiliates-details { font-size: 11px; }
+  .affiliates-details summary { color: var(--text-dim); cursor: pointer; }
+  .affiliates-details summary:hover { color: var(--accent); }
+  .affiliates-details a, .affiliates-details span { display: block; margin-top: 2px; }
+  .affiliates-details a { color: var(--accent); text-decoration: none; }
+  .affiliates-details a:hover { text-decoration: underline; }
+  .enlisted, .location, .languages { font-size: 11px; color: var(--text-dim); }
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .history-btn {
     background: none; border: none; padding: 0 0 0 6px; font-size: 12px;
@@ -228,6 +233,7 @@
       <option value="bio" data-i18n="row.historyFieldBio"></option>
       <option value="languages" data-i18n="row.historyFieldLanguages"></option>
       <option value="enlisted_at" data-i18n="row.enlistedPrefix"></option>
+      <option value="location" data-i18n="row.locationPrefix"></option>
       <option value="affiliate_orgs" data-i18n="row.affiliateOrgs"></option>
     </select>
     <button id="activityOrderBtn">↓ desc</button>
@@ -344,6 +350,7 @@
   <select id="tagFilter">
     <option value="" data-i18n="toolbar.tagAll"></option>
   </select>
+  <input type="text" id="locationLangFilter" data-i18n-placeholder="toolbar.locationLang" />
   <a id="exportBtn" href="/api/export.csv" download data-i18n="export.button"></a>
 
   <div class="bulk">
@@ -376,6 +383,7 @@
     <thead>
       <tr>
         <th></th>
+        <th data-i18n="table.locationLang"></th>
         <th data-i18n="table.status"></th>
         <th data-i18n="table.lastSeen"></th>
         <th data-i18n="table.orgs"></th>
@@ -495,7 +503,7 @@ document.getElementById('themeDark').addEventListener('click', () => setTheme('d
 document.getElementById('themeLight').addEventListener('click', () => setTheme('light'));
 applyTheme();
 
-const state = { search: '', decision: 'all', status: 'all', hasNotes: false, duplicates: false, tag: '', sort: 'presence_since', order: 'asc', page: 1, pageSize: 50 };
+const state = { search: '', decision: 'all', status: 'all', hasNotes: false, duplicates: false, tag: '', locationLang: '', sort: 'presence_since', order: 'asc', page: 1, pageSize: 50 };
 
 const el = (id) => document.getElementById(id);
 
@@ -526,7 +534,7 @@ async function loadSummary() {
 function buildQuery(extra) {
   const p = new URLSearchParams({
     search: state.search, decision: state.decision, status: state.status,
-    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0', tag: state.tag,
+    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0', tag: state.tag, locationLang: state.locationLang,
     sort: state.sort, order: state.order, page: state.page, pageSize: state.pageSize,
     ...extra,
   });
@@ -536,7 +544,7 @@ function buildQuery(extra) {
 function buildFilterQuery() {
   const p = new URLSearchParams({
     search: state.search, decision: state.decision, status: state.status,
-    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0', tag: state.tag,
+    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0', tag: state.tag, locationLang: state.locationLang,
   });
   return p.toString();
 }
@@ -570,20 +578,31 @@ async function loadRows() {
       orgHtml = `<div class="org"><a href="${escapeHtml(f.org_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.org_name)}</a></div>`;
     }
     let affiliatesHtml = '';
-    if (f.affiliate_org_names) {
-      const names = f.affiliate_org_names.split(', ');
-      affiliatesHtml = `<select class="affiliates-select" title="${escapeHtml(t('row.affiliateOrgs'))}">
-        <option>${t('row.affiliateOrgsCount', { n: names.length })}</option>
-        ${names.map((n) => `<option disabled>${escapeHtml(n)}</option>`).join('')}
-      </select>`;
+    const affiliateOrgs = f.affiliate_orgs_json ? JSON.parse(f.affiliate_orgs_json).filter((a) => a.name) : [];
+    if (affiliateOrgs.length) {
+      affiliatesHtml = `<details class="affiliates-details" title="${escapeHtml(t('row.affiliateOrgs'))}">
+        <summary>${t('row.affiliateOrgsCount', { n: affiliateOrgs.length })}</summary>
+        ${affiliateOrgs.map((a) => a.url
+          ? `<a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.name)}</a>`
+          : `<span>${escapeHtml(a.name)}</span>`
+        ).join('')}
+      </details>`;
     }
     const enlistedHtml = f.enlisted_at ? `<div class="dim enlisted">${t('row.enlistedPrefix')}: ${escapeHtml(f.enlisted_at)}</div>` : '';
+    const locationHtml = f.location ? `<div class="dim location">📍 ${escapeHtml(f.location)}</div>` : '';
+    let languagesHtml = '';
+    if (f.languages) {
+      const dn = new Intl.DisplayNames([lang], { type: 'language' });
+      const names = f.languages.split(',').map((code) => { try { return dn.of(code) || code; } catch { return code; } });
+      languagesHtml = `<div class="dim languages">🌐 ${escapeHtml(names.join(', '))}</div>`;
+    }
     return `
       <tr class="${rowCls}" data-row-id="${f.id}">
         <td><div class="friend">
           <img src="${escapeHtml(f.avatar || '')}" onerror="this.style.visibility='hidden'" />
           <div><div class="nickname"><a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(f.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.nickname)}</a></div><div class="displayname">${escapeHtml(f.displayname)}</div>${orgHtml}${affiliatesHtml}${enlistedHtml}</div>
         </div></td>
+        <td>${locationHtml}${languagesHtml}</td>
         <td><span class="status-dot status-${f.presence_status || 'offline'}"></span>${f.presence_status || '?'}
           <button type="button" class="history-btn" data-id="${f.id}" title="${escapeHtml(t('row.historyTitle'))}">🕒</button>
         </td>
@@ -638,6 +657,7 @@ function historyFieldLabel(field) {
   if (field === 'bio') return t('row.historyFieldBio');
   if (field === 'languages') return t('row.historyFieldLanguages');
   if (field === 'enlisted_at') return t('row.enlistedPrefix');
+  if (field === 'location') return t('row.locationPrefix');
   if (field === 'affiliate_orgs') return t('row.affiliateOrgs');
   return field;
 }
@@ -677,6 +697,7 @@ el('statusFilter').addEventListener('change', () => { state.status = el('statusF
 el('hasNotesFilter').addEventListener('change', () => { state.hasNotes = el('hasNotesFilter').checked; state.page = 1; loadRows(); });
 el('duplicatesFilter').addEventListener('change', () => { state.duplicates = el('duplicatesFilter').checked; state.page = 1; loadRows(); });
 el('tagFilter').addEventListener('change', () => { state.tag = el('tagFilter').value; state.page = 1; loadRows(); });
+el('locationLangFilter').addEventListener('input', debounce(() => { state.locationLang = el('locationLangFilter').value; state.page = 1; loadRows(); }, 300));
 async function loadTagFilterOptions() {
   const tags = await (await fetch('/api/tags')).json();
   const select = el('tagFilter');
@@ -717,7 +738,7 @@ async function bulkSet(setTo) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       search: state.search, decision: state.decision, status: state.status,
-      hasNotes: state.hasNotes, duplicates: state.duplicates, tag: state.tag,
+      hasNotes: state.hasNotes, duplicates: state.duplicates, tag: state.tag, locationLang: state.locationLang,
       setTo,
     }),
   });
