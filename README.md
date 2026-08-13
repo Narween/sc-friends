@@ -95,6 +95,7 @@ ever overwriting a decision already made (the `decision` column).
 | `presence_status`, `presence_since` | presence status and Unix timestamp of its last change |
 | `common_communities_count` | number of orgs/communities in common |
 | `raw_json` | full raw friend object, for reference |
+| `notes` | free-text note, set from the web interface, included in search |
 | `decision` | `NULL` (undecided) / `'keep'` / `'remove'` — **the only field that matters for step 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | audit trail |
 
@@ -118,7 +119,29 @@ node mark-candidates.js --keep <id>             # forces a specific friend to 'k
 A visual alternative to everything above: a small web app (search, filters,
 sorting, per-friend or bulk-filtered decisions), directly connected to
 `friends.db`. Available in French and English (switcher top-right), with a
-light/dark/system theme.
+light/dark/system theme. The app version is shown in the window title and in
+the page header.
+
+Beyond the basics:
+- **Nicknames link to the RSI citizen profile**
+  (`robertsspaceindustries.com/citizens/<nickname>`) — click through to check
+  a friend's profile before deciding.
+- **Per-friend notes**, free text, auto-saved (debounced) as you type,
+  included in the search box alongside nickname/display name.
+- **Filters**: decision, presence status, "has a note", and "possible
+  duplicates" (friends sharing the same display name under different
+  handles — catches an account that changed its RSI handle).
+- **Keyboard shortcuts**: with the mouse over a row, `K`/`R`/`U` set that
+  friend's decision to Keep/Remove/Undecided without reaching for a button —
+  inert while typing in a text field.
+- **CSV export** of the currently filtered list (nickname, display name,
+  status, last seen, common orgs, decision, notes) — for reviewing or
+  sharing a "to remove" list outside the app.
+- **Database backup**: downloads a consistent snapshot of `friends.db`
+  (uses `better-sqlite3`'s own online-backup API, safe even with pending WAL
+  writes — a raw file copy wouldn't be).
+- Pagination controls (page size, prev/next) are duplicated above and below
+  the table.
 
 ```bash
 node server.js
@@ -141,7 +164,11 @@ The red banner at the bottom of the page lets you trigger the **real
 deletion** (equivalent to `apply-removals.js --confirm`) directly from the
 page: the button stays disabled until you type `YES` (`OUI` in French) in
 the confirmation field, and one more confirmation is asked before it runs.
-The deletion log streams live.
+The deletion log streams live. While it's running, a pulsing banner appears
+and decisions/notes/bulk actions are locked (grayed out, unclickable) —
+`apply-removals.js` snapshots the pending list once at the start, so editing
+decisions mid-run would just be confusing, not actually reflected in that
+run.
 
 You can also edit `friends.db` directly in SQL to fine-tune things:
 

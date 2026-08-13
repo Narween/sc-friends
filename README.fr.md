@@ -95,6 +95,7 @@ Schéma de la table `friends` :
 | `presence_status`, `presence_since` | statut de présence et horodatage Unix du dernier changement |
 | `common_communities_count` | nombre d'orgs/communautés en commun |
 | `raw_json` | objet ami brut complet, pour référence |
+| `notes` | note libre, saisie depuis l'interface web, incluse dans la recherche |
 | `decision` | `NULL` (indécis) / `'keep'` / `'remove'` — **le seul champ qui compte pour l'étape 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | traçabilité |
 
@@ -118,7 +119,31 @@ node mark-candidates.js --keep <id>             # force un ami précis en 'keep'
 Alternative visuelle à tout ce qui précède : une petite appli web (recherche,
 filtres, tri, décision par ami ou par lot filtré), branchée en direct sur
 `friends.db`. Disponible en français et en anglais (sélecteur en haut à
-droite), avec un thème clair/sombre/système.
+droite), avec un thème clair/sombre/système. Le numéro de version s'affiche
+dans le titre de la fenêtre et dans l'en-tête de la page.
+
+Au-delà des bases :
+- **Le pseudo renvoie vers la fiche RSI**
+  (`robertsspaceindustries.com/citizens/<pseudo>`) — pratique pour vérifier
+  le profil d'un ami avant de décider.
+- **Notes par ami**, texte libre, sauvegardées automatiquement (avec un
+  léger délai) pendant la saisie, incluses dans la recherche aux côtés du
+  pseudo/nom affiché.
+- **Filtres** : décision, statut de présence, "a une note", et "doublons
+  possibles" (amis partageant le même nom affiché sous des pseudos
+  différents — repère un compte qui a changé de handle RSI).
+- **Raccourcis clavier** : souris sur une ligne, `K`/`R`/`U` fixent la
+  décision de cet ami sur Garder/Retirer/Indécis sans viser un bouton —
+  inactifs pendant la saisie dans un champ texte.
+- **Export CSV** de la liste actuellement filtrée (pseudo, nom affiché,
+  statut, dernière connexion, orgs communes, décision, notes) — pour relire
+  ou partager une liste "à retirer" hors de l'appli.
+- **Sauvegarde de la base** : télécharge un instantané cohérent de
+  `friends.db` (utilise l'API de backup en ligne de `better-sqlite3`, sûre
+  même avec des écritures WAL en attente — une simple copie de fichier ne le
+  serait pas).
+- Les contrôles de pagination (taille de page, précédent/suivant) sont
+  dupliqués au-dessus et en dessous du tableau.
 
 ```bash
 node server.js
@@ -143,7 +168,11 @@ Le bandeau rouge en bas de page permet de lancer la **suppression réelle**
 le bouton reste désactivé tant que tu n'as pas tapé `OUI` (respectivement
 `YES` en anglais) dans le champ de confirmation, et une confirmation
 supplémentaire est demandée avant le lancement. Le log de la suppression
-s'affiche en direct.
+s'affiche en direct. Pendant qu'elle tourne, un bandeau qui pulse apparaît
+et les décisions/notes/actions groupées sont verrouillées (grisées, non
+cliquables) — `apply-removals.js` fige la liste à traiter une seule fois au
+démarrage, donc modifier des décisions en cours de route ne serait de toute
+façon pas pris en compte pour cette exécution, juste source de confusion.
 
 Tu peux aussi éditer `friends.db` directement en SQL pour affiner :
 
