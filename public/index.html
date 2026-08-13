@@ -131,6 +131,8 @@
   .org a { color: var(--accent); text-decoration: none; }
   .org a:hover { text-decoration: underline; }
   .org-redacted { color: var(--text-dim); font-style: italic; }
+  .affiliates-select { font-size: 11px; max-width: 140px; background: transparent; color: var(--text-dim); border: none; padding: 0; cursor: pointer; }
+  .enlisted { font-size: 11px; }
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .history-btn {
     background: none; border: none; padding: 0 0 0 6px; font-size: 12px;
@@ -159,6 +161,9 @@
   .applied-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
   .applied-badge.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .applied-badge.fail { background: rgba(229,72,77,0.15); color: var(--remove); }
+  .activity-type { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-row); color: var(--text-dim); white-space: nowrap; }
+  .activity-type.online { background: rgba(63,191,107,0.15); color: var(--keep); }
+  .activity-type.offline { background: var(--bg-row); color: var(--text-dim); }
 
   .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; justify-content: center; color: var(--text-dim); }
   footer { padding: 16px 24px; color: var(--text-dim); font-size: 12px; }
@@ -166,6 +171,7 @@
   .panel { margin: 16px 24px; padding: 16px 20px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
   .panel h2 { margin: 0 0 8px; font-size: 14px; }
   .panel .dim { color: var(--text-dim); font-size: 13px; }
+  .activity-toolbar { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
   .setup-steps { padding-left: 0; list-style: none; margin: 0; }
   .setup-steps li { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
   .setup-steps li:last-child { border-bottom: none; }
@@ -173,6 +179,7 @@
   .step-desc { flex: 1; min-width: 260px; }
   .auto-refresh-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .auto-refresh-box .hint { flex-basis: 100%; margin: 4px 0 0; }
+  .profiles-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
   .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127,146,163,0.15); color: var(--text-dim); white-space: nowrap; }
   .status.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .status.missing { background: rgba(229,72,77,0.15); color: var(--remove); }
@@ -211,7 +218,33 @@
 <section class="panel" id="activityPanel" style="display:none">
   <h2 data-i18n="activity.title"></h2>
   <p class="dim" data-i18n="activity.intro"></p>
-  <div id="activityBody"></div>
+  <div class="activity-toolbar">
+    <input type="text" id="activitySearch" data-i18n-placeholder="toolbar.search" />
+    <select id="activityFieldFilter">
+      <option value="all" data-i18n="activity.fieldAll"></option>
+      <option value="presence" data-i18n="row.historyFieldPresence"></option>
+      <option value="nickname" data-i18n="row.historyFieldNickname"></option>
+      <option value="displayname" data-i18n="row.historyFieldDisplayname"></option>
+      <option value="bio" data-i18n="row.historyFieldBio"></option>
+      <option value="languages" data-i18n="row.historyFieldLanguages"></option>
+      <option value="enlisted_at" data-i18n="row.enlistedPrefix"></option>
+      <option value="affiliate_orgs" data-i18n="row.affiliateOrgs"></option>
+    </select>
+    <button id="activityOrderBtn">↓ desc</button>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th data-i18n="activity.colDate"></th>
+          <th data-i18n="activity.colType"></th>
+          <th data-i18n="activity.colUser"></th>
+          <th data-i18n="activity.colDetail"></th>
+        </tr>
+      </thead>
+      <tbody id="activityBody"></tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel" id="aboutPanel" style="display:none">
@@ -269,6 +302,15 @@
       <option value="1440" data-i18n="setup.autoRefresh.every1440"></option>
     </select>
     <p class="hint" id="autoRefreshStatus"></p>
+  </div>
+
+  <div class="profiles-box">
+    <p class="dim" data-i18n="setup.profiles.intro"></p>
+    <div class="step-row">
+      <input type="number" id="profilesLimit" min="1" placeholder="—" style="width:70px" />
+      <button id="runProfiles" data-i18n="setup.profiles.run"></button>
+    </div>
+    <pre class="task-log" id="log-profiles"></pre>
   </div>
 </section>
 
@@ -527,11 +569,20 @@ async function loadRows() {
     } else if (f.org_name) {
       orgHtml = `<div class="org"><a href="${escapeHtml(f.org_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.org_name)}</a></div>`;
     }
+    let affiliatesHtml = '';
+    if (f.affiliate_org_names) {
+      const names = f.affiliate_org_names.split(', ');
+      affiliatesHtml = `<select class="affiliates-select" title="${escapeHtml(t('row.affiliateOrgs'))}">
+        <option>${t('row.affiliateOrgsCount', { n: names.length })}</option>
+        ${names.map((n) => `<option disabled>${escapeHtml(n)}</option>`).join('')}
+      </select>`;
+    }
+    const enlistedHtml = f.enlisted_at ? `<div class="dim enlisted">${t('row.enlistedPrefix')}: ${escapeHtml(f.enlisted_at)}</div>` : '';
     return `
       <tr class="${rowCls}" data-row-id="${f.id}">
         <td><div class="friend">
           <img src="${escapeHtml(f.avatar || '')}" onerror="this.style.visibility='hidden'" />
-          <div><div class="nickname"><a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(f.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.nickname)}</a></div><div class="displayname">${escapeHtml(f.displayname)}</div>${orgHtml}</div>
+          <div><div class="nickname"><a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(f.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.nickname)}</a></div><div class="displayname">${escapeHtml(f.displayname)}</div>${orgHtml}${affiliatesHtml}${enlistedHtml}</div>
         </div></td>
         <td><span class="status-dot status-${f.presence_status || 'offline'}"></span>${f.presence_status || '?'}
           <button type="button" class="history-btn" data-id="${f.id}" title="${escapeHtml(t('row.historyTitle'))}">🕒</button>
@@ -584,6 +635,10 @@ function historyFieldLabel(field) {
   if (field === 'presence') return t('row.historyFieldPresence');
   if (field === 'nickname') return t('row.historyFieldNickname');
   if (field === 'displayname') return t('row.historyFieldDisplayname');
+  if (field === 'bio') return t('row.historyFieldBio');
+  if (field === 'languages') return t('row.historyFieldLanguages');
+  if (field === 'enlisted_at') return t('row.enlistedPrefix');
+  if (field === 'affiliate_orgs') return t('row.affiliateOrgs');
   return field;
 }
 
@@ -696,12 +751,38 @@ el('toggleActivity').addEventListener('click', async () => {
   panel.style.display = show ? 'block' : 'none';
   if (show) await loadActivity();
 });
-async function loadActivity() {
-  const entries = await (await fetch('/api/activity?limit=100')).json();
-  el('activityBody').innerHTML = entries.length
-    ? entries.map((e) => `<div class="history-entry">${new Date(e.changed_at).toLocaleString()} — <a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(e.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.nickname)}</a> — ${historyFieldLabel(e.field)}: ${escapeHtml(e.value || t('row.unknown'))}</div>`).join('')
-    : `<div class="history-empty">${t('row.historyEmpty')}</div>`;
+const activityState = { search: '', field: 'all', order: 'desc' };
+function activityTypeClass(field, value) {
+  if (field === 'presence') {
+    if (value === 'online' || value === 'playing') return 'activity-type online';
+    return 'activity-type offline';
+  }
+  return 'activity-type';
 }
+
+async function loadActivity() {
+  const p = new URLSearchParams({ limit: '100', search: activityState.search, field: activityState.field, order: activityState.order });
+  const entries = await (await fetch('/api/activity?' + p.toString())).json();
+  el('activityBody').innerHTML = entries.length
+    ? entries.map((e) => `
+        <tr>
+          <td>${new Date(e.changed_at).toLocaleString()}</td>
+          <td><span class="${activityTypeClass(e.field, e.value)}">${historyFieldLabel(e.field)}</span></td>
+          <td><div class="friend">
+            <img src="${escapeHtml(e.avatar || '')}" onerror="this.style.visibility='hidden'" />
+            <a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(e.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.nickname)}</a>
+          </div></td>
+          <td>${escapeHtml(e.value || t('row.unknown'))}</td>
+        </tr>`).join('')
+    : `<tr><td colspan="4" class="history-empty">${t('row.historyEmpty')}</td></tr>`;
+}
+el('activitySearch').addEventListener('input', debounce(() => { activityState.search = el('activitySearch').value; loadActivity(); }, 300));
+el('activityFieldFilter').addEventListener('change', () => { activityState.field = el('activityFieldFilter').value; loadActivity(); });
+el('activityOrderBtn').addEventListener('click', () => {
+  activityState.order = activityState.order === 'asc' ? 'desc' : 'asc';
+  el('activityOrderBtn').textContent = activityState.order === 'asc' ? '↑ asc' : '↓ desc';
+  loadActivity();
+});
 
 // --- Panneau "à propos" ---
 let aboutData = null;
@@ -775,6 +856,12 @@ el('runLogin').addEventListener('click', () => {
 el('confirmLogin').addEventListener('click', () => fetch('/api/login-confirm', { method: 'POST' }));
 el('runFetch').addEventListener('click', () => runTask('fetch', 'log-fetch', { onDone: () => loadStatus() }));
 el('runImport').addEventListener('click', () => runTask('import', 'log-import', { onDone: () => { loadStatus(); loadSummary(); loadRows(); } }));
+
+el('runProfiles').addEventListener('click', () => {
+  const limitVal = parseInt(el('profilesLimit').value, 10);
+  const body = Number.isInteger(limitVal) && limitVal > 0 ? { limit: limitVal } : {};
+  runTask('profiles', 'log-profiles', { body, onDone: () => { loadRows(); } });
+});
 
 // --- Auto-refresh (fetch + import périodiques, piloté côté serveur) ---
 // Le vrai déclenchement vit dans server.js (setInterval) même appli fermée

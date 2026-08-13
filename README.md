@@ -105,11 +105,19 @@ ever overwriting a decision already made (the `decision` column).
 | `raw_json` | full raw friend object, for reference |
 | `notes` | free-text note, set from the web interface, included in search |
 | `tags` | comma-separated free-text tags ("org mate,streamer"), set from the web interface, included in search and filterable |
+| `bio`, `languages` | Spectrum's "signature" and spoken-language list, tracked for history only — not shown as their own columns in the table |
+| `enlisted_at`, `profile_fetched_at` | enlistment date and last-scrape timestamp from the friend's **public RSI profile page** (`fetch-profiles.js` — separate from everything else, see below) |
 | `decision` | `NULL` (undecided) / `'keep'` / `'remove'` — **the only field that matters for step 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | audit trail |
 
+A separate `affiliate_orgs` table (friend_id, org_name, org_url, org_rank)
+holds each friend's secondary/affiliate organizations — also from the public
+profile page, replaced wholesale on every scrape of that friend (not
+incrementally updated).
+
 A separate `change_log` table records every observed change (presence
-status, nickname, display name) at each import — the web interface's
+status, nickname, display name, bio, spoken languages, enlistment date,
+affiliate orgs) at each import or profile scrape — the web interface's
 per-friend 🕒 button and the global activity feed both read from it (see
 below). Not real-time: granularity depends on how often you fetch/import,
 manually or via auto-refresh.
@@ -164,13 +172,27 @@ Beyond the basics:
   to private on RSI — distinct from having no org at all, which shows
   nothing.
 - **Connection history**: the 🕒 button next to a friend's status opens the
-  recorded status/nickname/display-name changes for that friend (up to the
-  last 50), a bit like VRCX's friend log. Populated by `change_log` (see the
-  schema above) — only as fine-grained as how often the data gets
-  refreshed.
-- **Activity feed** (📰 button, header): the same `change_log` data, but
-  merged across every friend into one chronological feed instead of opening
-  the history popup one friend at a time.
+  recorded changes for that friend (status, nickname, display name, bio,
+  languages, enlistment date, affiliate orgs — up to the last 50), a bit
+  like VRCX's friend log. Populated by `change_log` (see the schema above) —
+  only as fine-grained as how often the data gets refreshed.
+- **Activity feed** (📰 button, header): a VRCX-style table (Date / Type /
+  User / Detail) of the same `change_log` data merged across every friend,
+  with search and a type filter, instead of opening the history popup one
+  friend at a time.
+- **Public profile scrape** (⚠ setup panel, separate from everything else):
+  fetches enlistment date and affiliate/secondary organizations from each
+  friend's public RSI profile page — two things the friends-list API used
+  everywhere else in this app simply doesn't expose, since it requires
+  loading a *different* page (`/citizens/<handle>` and
+  `/citizens/<handle>/organizations`) per friend, ~2 requests each. Runs in
+  batches of 5 friends with a ~3-minute pause between batches — a full pass
+  over hundreds of friends realistically takes hours, by design (this is
+  real page-scraping against RSI, not an API call — going faster would look
+  like abuse). Resumable: tracks `profile_fetched_at` per friend and always
+  processes never-scraped friends first, so closing the app and running it
+  again later picks up where it left off rather than starting over. Enter a
+  number in the field to test on a small batch instead of everyone.
 - **Tags**: free-text, comma-separated, per friend (e.g. "org mate,
   streamer") — filterable via the toolbar dropdown, included in search,
   exported in the CSV. Multi-word tags are supported; matching is

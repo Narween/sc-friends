@@ -23,6 +23,7 @@ const TASKS = {
   fetch: { script: 'fetch-friends.js' },
   import: { script: 'import-friends.js' },
   apply: { script: 'apply-removals.js', baseArgs: ['--confirm'] },
+  profiles: { script: 'fetch-profiles.js' },
 };
 
 const taskStates = {};
@@ -61,7 +62,7 @@ function runScript(name, body = {}) {
   const st = getTaskState(name);
   const task = TASKS[name];
   const args = [path.join(__dirname, task.script), ...(task.baseArgs || [])];
-  if (name === 'apply' && Number.isInteger(body.limit) && body.limit > 0) {
+  if ((name === 'apply' || name === 'profiles') && Number.isInteger(body.limit) && body.limit > 0) {
     args.push('--limit', String(body.limit));
   }
 
@@ -254,6 +255,21 @@ function isTrustedOrigin(req) {
 }
 
 const server = http.createServer(async (req, res) => {
+  try {
+    await handleRequest(req, res);
+  } catch (e) {
+    // Sans ce filet, une exception dans un handler de route (même
+    // synchrone) part comme rejet de promesse non intercepté — Node la
+    // traite comme une exception non attrapée et tue tout le process,
+    // pas seulement la requête en cours. Vu une fois avec une colonne SQL
+    // ambiguë après un JOIN ; ça ne doit plus jamais planter tout le
+    // serveur pour une seule requête qui part mal.
+    console.error('request handler error:', e);
+    if (!res.headersSent) sendJson(res, 500, { error: 'internal error' });
+  }
+});
+
+async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (req.method === 'POST' && !isTrustedOrigin(req)) {
@@ -320,8 +336,12 @@ const server = http.createServer(async (req, res) => {
     const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag });
     const rows = db
       .prepare(
-        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, org_name, org_redacted, decision, notes, tags
-         FROM friends ${where}
+        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, friends.org_name, org_redacted, decision, notes, tags, enlisted_at,
+                GROUP_CONCAT(affiliate_orgs.org_name, ', ') as affiliate_org_names
+         FROM friends
+         LEFT JOIN affiliate_orgs ON affiliate_orgs.friend_id = friends.id
+         ${where}
+         GROUP BY friends.id
          ORDER BY nickname ASC;`
       )
       .all(...params);
@@ -329,13 +349,14 @@ const server = http.createServer(async (req, res) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'decision', 'notes', 'tags'];
+    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'affiliate_orgs', 'enlisted', 'decision', 'notes', 'tags'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push([
         r.nickname, r.displayname, r.presence_status,
         r.presence_since ? new Date(r.presence_since * 1000).toISOString() : '',
         r.common_communities_count, r.org_redacted ? 'hidden/private' : (r.org_name || ''),
+        r.affiliate_org_names || '', r.enlisted_at || '',
         r.decision || 'undecided', r.notes, r.tags,
       ].map(csvEscape).join(','));
     }
@@ -409,14 +430,29 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/activity') {
-    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+    const limit = Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10) || 100));
+    const order = url.searchParams.get('order') === 'asc' ? 'ASC' : 'DESC';
+    const field = url.searchParams.get('field') || 'all';
+    const search = url.searchParams.get('search') || '';
+    const conditions = [];
+    const params = [];
+    if (['presence', 'nickname', 'displayname', 'bio', 'languages', 'enlisted_at', 'affiliate_orgs'].includes(field)) {
+      conditions.push(`c.field = ?`);
+      params.push(field);
+    }
+    if (search) {
+      conditions.push(`(f.nickname LIKE ? OR f.displayname LIKE ? OR c.value LIKE ?)`);
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = getDb()
       .prepare(
-        `SELECT c.field, c.value, c.changed_at, f.id as friend_id, f.nickname, f.displayname
+        `SELECT c.field, c.value, c.changed_at, f.id as friend_id, f.nickname, f.displayname, f.avatar
          FROM change_log c JOIN friends f ON f.id = c.friend_id
-         ORDER BY c.changed_at DESC LIMIT ?;`
+         ${where}
+         ORDER BY c.changed_at ${order} LIMIT ?;`
       )
-      .all(limit);
+      .all(...params, limit);
     return sendJson(res, 200, rows);
   }
 
@@ -473,8 +509,12 @@ const server = http.createServer(async (req, res) => {
     const total = db.prepare(`SELECT COUNT(*) as n FROM friends ${where};`).get(...params).n;
     const rows = db
       .prepare(
-        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, org_name, org_url, org_redacted, decision, applied_at, apply_success, notes, tags
-         FROM friends ${where}
+        `SELECT friends.id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, friends.org_name, friends.org_url, org_redacted, decision, applied_at, apply_success, notes, tags, enlisted_at,
+                GROUP_CONCAT(affiliate_orgs.org_name, ', ') as affiliate_org_names
+         FROM friends
+         LEFT JOIN affiliate_orgs ON affiliate_orgs.friend_id = friends.id
+         ${where}
+         GROUP BY friends.id
          ORDER BY ${sort} ${order} NULLS LAST
          LIMIT ? OFFSET ?;`
       )
@@ -557,7 +597,7 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404);
   res.end('Not found');
-});
+}
 
 // On ne sait pas encore quelle langue l'utilisateur préfère à ce stade (page
 // pas encore chargée) : ces deux messages système s'affichent dans TOUTES

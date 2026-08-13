@@ -105,11 +105,19 @@ Schéma de la table `friends` :
 | `raw_json` | objet ami brut complet, pour référence |
 | `notes` | note libre, saisie depuis l'interface web, incluse dans la recherche |
 | `tags` | tags libres séparés par virgule ("org mate,streamer"), saisis depuis l'interface web, inclus dans la recherche et filtrables |
+| `bio`, `languages` | la "signature" et la liste de langues parlées de Spectrum, suivies uniquement pour l'historique — pas de colonne dédiée dans le tableau |
+| `enlisted_at`, `profile_fetched_at` | date d'enlistement et horodatage du dernier scrape, depuis la **page profil publique RSI** de l'ami (`fetch-profiles.js` — à part de tout le reste, voir plus bas) |
 | `decision` | `NULL` (indécis) / `'keep'` / `'remove'` — **le seul champ qui compte pour l'étape 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | traçabilité |
 
+Une table séparée `affiliate_orgs` (friend_id, org_name, org_url, org_rank)
+contient les organisations secondaires/affiliées de chaque ami — aussi
+depuis la page profil publique, remplacées en bloc à chaque scrape de cet
+ami (pas mises à jour ligne à ligne).
+
 Une table séparée `change_log` enregistre chaque changement observé (statut
-de présence, pseudo, nom affiché) à chaque import — le bouton 🕒 par ami de
+de présence, pseudo, nom affiché, bio, langues parlées, date d'enlistement,
+orgs affiliées) à chaque import ou scrape de profil — le bouton 🕒 par ami de
 l'interface web et le flux d'activité global s'appuient dessus tous les deux
 (voir plus bas). Pas du temps réel : la granularité dépend de la fréquence
 de récupération/import, manuelle ou via l'auto-refresh.
@@ -166,13 +174,30 @@ Au-delà des bases :
   visibilité de son org en privé sur RSI — distinct de l'absence totale
   d'org, qui n'affiche rien.
 - **Historique de connexion** : le bouton 🕒 à côté du statut d'un ami ouvre
-  les changements de statut/pseudo/nom affiché enregistrés pour cet ami
-  (jusqu'aux 50 derniers), un peu comme le journal ami de VRCX. Alimenté par
-  `change_log` (voir le schéma plus haut) — aussi précis que la fréquence de
-  rafraîchissement des données, pas plus.
-- **Flux d'activité** (bouton 📰, en-tête) : les mêmes données `change_log`,
-  mais fusionnées sur tous les amis en un seul flux chronologique, au lieu
-  d'ouvrir le popup d'historique ami par ami.
+  les changements enregistrés pour cet ami (statut, pseudo, nom affiché,
+  bio, langues, date d'enlistement, orgs affiliées — jusqu'aux 50 derniers),
+  un peu comme le journal ami de VRCX. Alimenté par `change_log` (voir le
+  schéma plus haut) — aussi précis que la fréquence de rafraîchissement des
+  données, pas plus.
+- **Flux d'activité** (bouton 📰, en-tête) : un tableau façon VRCX (Date /
+  Type / Ami / Détail) des mêmes données `change_log` fusionnées sur tous
+  les amis, avec recherche et filtre par type, au lieu d'ouvrir le popup
+  d'historique ami par ami.
+- **Scrape de profil public** (⚠ panneau de configuration, à part de tout le
+  reste) : récupère la date d'enlistement et les organisations
+  affiliées/secondaires depuis la page profil publique RSI de chaque ami —
+  deux infos que l'API liste d'amis, utilisée partout ailleurs dans
+  l'appli, n'expose tout simplement pas, puisque ça demande de charger une
+  page *différente* (`/citizens/<pseudo>` et
+  `/citizens/<pseudo>/organizations`) par ami, ~2 requêtes chacun. Tourne
+  par lots de 5 amis avec une pause d'environ 3 minutes entre les lots — un
+  passage complet sur des centaines d'amis prend réalistement des heures,
+  volontairement (c'est du vrai scraping de page contre RSI, pas un appel
+  API — aller plus vite ressemblerait à de l'abus). Reprenable : suit
+  `profile_fetched_at` par ami et traite toujours les jamais-scrapés en
+  premier, donc fermer l'appli et relancer plus tard reprend là où c'était
+  resté plutôt que de tout refaire. Mets un nombre dans le champ pour
+  tester sur un petit lot au lieu de tout le monde.
 - **Tags** : texte libre, séparés par virgule, par ami (ex. "org mate,
   streamer") — filtrables via le menu déroulant de la barre d'outils,
   inclus dans la recherche, exportés dans le CSV. Les tags à plusieurs mots
