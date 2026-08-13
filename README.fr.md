@@ -128,6 +128,11 @@ confidentialité), d'où une détection basée sur l'url et non le texte du
 badge ; et un ami avec la visibilité de son org réglée en privé affiche un
 badge `[REDACTED]` mais **sans** url — c'est ce cas-là qui est rapporté
 comme "masquée", distinct de l'absence totale d'org.
+Les noms d'org de Spectrum reviennent parfois avec des entités HTML
+littérales non décodées (`L'ARM&Eacute;E...` au lieu de `L'ARMÉE...`) —
+décodées à l'import via le paquet `he`, sinon l'échappement HTML de la page
+double-échapperait le "&" déjà présent et afficherait le code d'entité brut
+au lieu du caractère accentué.
 
 ### 4. Décision (`mark-candidates.js`) — 100% local, aucun appel réseau
 

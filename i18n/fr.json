@@ -49,6 +49,7 @@
   "toolbar.sortNickname": "Trier: pseudo",
   "toolbar.sortDisplayname": "Trier: nom affiché",
   "toolbar.sortOrgs": "Trier: orgs communes",
+  "toolbar.sortMainOrg": "Trier: org principale",
   "toolbar.bulkKeep": "Marquer filtrés: Garder",
   "toolbar.bulkRemove": "Marquer filtrés: Retirer",
   "toolbar.bulkClear": "Marquer filtrés: Indécis",

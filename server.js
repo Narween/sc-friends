@@ -15,7 +15,7 @@ const I18N_DIR = path.join(__dirname, 'i18n');
 
 const PORT = Number(process.env.PORT || 3939);
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const ALLOWED_SORT = ['presence_since', 'nickname', 'displayname', 'common_communities_count', 'applied_at'];
+const ALLOWED_SORT = ['presence_since', 'nickname', 'displayname', 'common_communities_count', 'applied_at', 'org_name'];
 const PKG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
 const TASKS = {

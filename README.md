@@ -126,6 +126,11 @@ worth knowing: a friend can genuinely belong to an org literally named
 keys off the URL, not the badge text; and a friend with organization
 visibility set to private shows a `[REDACTED]` badge with **no** URL — that
 one is reported as "hidden", distinctly from having no org at all.
+Spectrum's org names sometimes come back with literal, undecoded HTML
+entities (`L'ARM&Eacute;E...` instead of `L'ARMÉE...`) — decoded on import
+via the `he` package, otherwise the page's own HTML-escaping would
+double-escape the stray `&` and show the raw entity code instead of the
+accented character.
 
 ### 4. Decide (`mark-candidates.js`) — 100% local, no network calls
 

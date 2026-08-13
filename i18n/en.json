@@ -49,6 +49,7 @@
   "toolbar.sortNickname": "Sort: nickname",
   "toolbar.sortDisplayname": "Sort: display name",
   "toolbar.sortOrgs": "Sort: common orgs",
+  "toolbar.sortMainOrg": "Sort: main org",
   "toolbar.bulkKeep": "Mark filtered: Keep",
   "toolbar.bulkRemove": "Mark filtered: Remove",
   "toolbar.bulkClear": "Mark filtered: Undecided",
