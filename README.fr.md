@@ -104,14 +104,21 @@ Schéma de la table `friends` :
 | `org_name`, `org_url`, `org_redacted` | organisation principale (extraite des badges Spectrum — voir plus bas), son URL, et si elle est masquée (confidentialité) |
 | `raw_json` | objet ami brut complet, pour référence |
 | `notes` | note libre, saisie depuis l'interface web, incluse dans la recherche |
+| `tags` | tags libres séparés par virgule ("org mate,streamer"), saisis depuis l'interface web, inclus dans la recherche et filtrables |
 | `decision` | `NULL` (indécis) / `'keep'` / `'remove'` — **le seul champ qui compte pour l'étape 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | traçabilité |
 
-Une table séparée `presence_log` enregistre chaque transition de statut
-observée (hors-ligne → en ligne, etc.) à chaque import — le bouton 🕒 par
-ami de l'interface web s'appuie dessus (voir plus bas). Pas du temps réel :
-la granularité dépend de la fréquence de récupération/import, manuelle ou
-via l'auto-refresh.
+Une table séparée `change_log` enregistre chaque changement observé (statut
+de présence, pseudo, nom affiché) à chaque import — le bouton 🕒 par ami de
+l'interface web et le flux d'activité global s'appuient dessus tous les deux
+(voir plus bas). Pas du temps réel : la granularité dépend de la fréquence
+de récupération/import, manuelle ou via l'auto-refresh.
+
+> Tu viens de la v1.0.11 ? Cette version-là proposait brièvement une table
+> `presence_log` limitée au statut de présence. Elle est migrée
+> automatiquement vers `change_log` (mêmes lignes, `field='presence'`) au
+> premier lancement d'une version plus récente — rien à faire à la main,
+> aucun historique perdu.
 
 **Organisation principale** : extraite des `meta.badges` de Spectrum (le
 badge dont l'url contient `/orgs/` est l'org ; il y en a au plus une). Deux
@@ -154,10 +161,18 @@ Au-delà des bases :
   visibilité de son org en privé sur RSI — distinct de l'absence totale
   d'org, qui n'affiche rien.
 - **Historique de connexion** : le bouton 🕒 à côté du statut d'un ami ouvre
-  les transitions en ligne/hors-ligne/... enregistrées pour cet ami (jusqu'aux
-  50 dernières), un peu comme le journal ami de VRCX. Alimenté par
-  `presence_log` (voir le schéma plus haut) — aussi précis que la fréquence
-  de rafraîchissement des données, pas plus.
+  les changements de statut/pseudo/nom affiché enregistrés pour cet ami
+  (jusqu'aux 50 derniers), un peu comme le journal ami de VRCX. Alimenté par
+  `change_log` (voir le schéma plus haut) — aussi précis que la fréquence de
+  rafraîchissement des données, pas plus.
+- **Flux d'activité** (bouton 📰, en-tête) : les mêmes données `change_log`,
+  mais fusionnées sur tous les amis en un seul flux chronologique, au lieu
+  d'ouvrir le popup d'historique ami par ami.
+- **Tags** : texte libre, séparés par virgule, par ami (ex. "org mate,
+  streamer") — filtrables via le menu déroulant de la barre d'outils,
+  inclus dans la recherche, exportés dans le CSV. Les tags à plusieurs mots
+  sont supportés ; le filtrage est sensible à la casse et exact par tag (un
+  tag "org" ne matchera pas "reorganized").
 - **Auto-refresh** : dans le panneau de configuration, une option relance
   fetch + import sur une minuterie (15 min à une fois par jour) sans rien
   toucher à la main — utile avec l'historique de connexion, pour qu'il ait

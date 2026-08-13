@@ -152,12 +152,37 @@ function scheduleAutoRefresh() {
   autoRefreshTimer = setInterval(runAutoRefresh, minutes * 60 * 1000);
 }
 
-function buildWhere(db_, { search, decision, status, hasNotes, duplicates }) {
+// "org mate,  Foo ,,bar" -> "org mate,Foo,bar" : bords de chaque tag
+// nettoyés, doublons de virgules/tags vides retirés, ordre préservé.
+// L'espace après la virgule est retiré (séparateur canonique), mais les
+// espaces internes d'un tag à plusieurs mots sont conservés intacts.
+function normalizeTags(raw) {
+  const seen = new Set();
+  const parts = [];
+  for (const t of raw.split(',')) {
+    const trimmed = t.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      parts.push(trimmed);
+    }
+  }
+  return parts.join(',');
+}
+
+function buildWhere(db_, { search, decision, status, hasNotes, duplicates, tag }) {
   const conditions = [];
   const params = [];
   if (search) {
-    conditions.push(`(nickname LIKE ? OR displayname LIKE ? OR notes LIKE ?)`);
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    conditions.push(`(nickname LIKE ? OR displayname LIKE ? OR notes LIKE ? OR tags LIKE ?)`);
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  if (tag) {
+    // Les tags sont stockés normalisés à l'écriture ("tag1,tag2", sans
+    // espace après la virgule — voir normalizeTags) : on peut donc matcher
+    // un tag exact par ses bords virgule, sans toucher aux espaces internes
+    // d'un tag à plusieurs mots ("org mate" ne doit pas devenir "orgmate").
+    conditions.push(`(',' || tags || ',') LIKE ?`);
+    params.push(`%,${tag},%`);
   }
   if (decision === 'keep' || decision === 'remove') {
     conditions.push(`decision=?`);
@@ -290,11 +315,12 @@ const server = http.createServer(async (req, res) => {
     const status = url.searchParams.get('status') || 'all';
     const hasNotes = url.searchParams.get('hasNotes') === '1';
     const duplicates = url.searchParams.get('duplicates') === '1';
+    const tag = url.searchParams.get('tag') || '';
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates });
+    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag });
     const rows = db
       .prepare(
-        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, org_name, org_redacted, decision, notes
+        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, org_name, org_redacted, decision, notes, tags
          FROM friends ${where}
          ORDER BY nickname ASC;`
       )
@@ -303,14 +329,14 @@ const server = http.createServer(async (req, res) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'decision', 'notes'];
+    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'decision', 'notes', 'tags'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push([
         r.nickname, r.displayname, r.presence_status,
         r.presence_since ? new Date(r.presence_since * 1000).toISOString() : '',
         r.common_communities_count, r.org_redacted ? 'hidden/private' : (r.org_name || ''),
-        r.decision || 'undecided', r.notes,
+        r.decision || 'undecided', r.notes, r.tags,
       ].map(csvEscape).join(','));
     }
     // BOM en tête : sans lui, Excel devine souvent un mauvais encodage pour
@@ -377,9 +403,45 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && /^\/api\/friends\/[^/]+\/history$/.test(url.pathname)) {
     const id = decodeURIComponent(url.pathname.split('/')[3]);
     const rows = getDb()
-      .prepare(`SELECT status, changed_at FROM presence_log WHERE friend_id=? ORDER BY changed_at DESC LIMIT 50;`)
+      .prepare(`SELECT field, value, changed_at FROM change_log WHERE friend_id=? ORDER BY changed_at DESC LIMIT 50;`)
       .all(id);
     return sendJson(res, 200, rows);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/activity') {
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+    const rows = getDb()
+      .prepare(
+        `SELECT c.field, c.value, c.changed_at, f.id as friend_id, f.nickname, f.displayname
+         FROM change_log c JOIN friends f ON f.id = c.friend_id
+         ORDER BY c.changed_at DESC LIMIT ?;`
+      )
+      .all(limit);
+    return sendJson(res, 200, rows);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/tags') {
+    const rows = getDb().prepare(`SELECT DISTINCT tags FROM friends WHERE tags IS NOT NULL AND tags != '';`).all();
+    const tagSet = new Set();
+    for (const r of rows) {
+      for (const tag of r.tags.split(',')) {
+        if (tag) tagSet.add(tag);
+      }
+    }
+    return sendJson(res, 200, [...tagSet].sort((a, b) => a.localeCompare(b)));
+  }
+
+  if (req.method === 'POST' && /^\/api\/friends\/[^/]+\/tags$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split('/')[3]);
+    const { tags } = await readBody(req);
+    if (typeof tags !== 'string' || tags.length > 500) {
+      return sendJson(res, 400, { error: 'invalid tags' });
+    }
+    const normalized = normalizeTags(tags);
+    getDb()
+      .prepare(`UPDATE friends SET tags=? WHERE id=?;`)
+      .run(normalized === '' ? null : normalized, id);
+    return sendJson(res, 200, { ok: true, tags: normalized });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/summary') {
@@ -395,6 +457,7 @@ const server = http.createServer(async (req, res) => {
     const status = url.searchParams.get('status') || 'all';
     const hasNotes = url.searchParams.get('hasNotes') === '1';
     const duplicates = url.searchParams.get('duplicates') === '1';
+    const tag = url.searchParams.get('tag') || '';
     const sort = ALLOWED_SORT.includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'presence_since';
     const order = url.searchParams.get('order') === 'desc' ? 'DESC' : 'ASC';
     const pageSizeRaw = url.searchParams.get('pageSize') || '50';
@@ -406,11 +469,11 @@ const server = http.createServer(async (req, res) => {
     const offset = showAll ? 0 : (page - 1) * pageSize;
 
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates });
+    const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates, tag });
     const total = db.prepare(`SELECT COUNT(*) as n FROM friends ${where};`).get(...params).n;
     const rows = db
       .prepare(
-        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, org_name, org_url, org_redacted, decision, applied_at, apply_success, notes
+        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, org_name, org_url, org_redacted, decision, applied_at, apply_success, notes, tags
          FROM friends ${where}
          ORDER BY ${sort} ${order} NULLS LAST
          LIMIT ? OFFSET ?;`
@@ -442,10 +505,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/bulk-decision') {
-    const { search, decision: filterDecision, status, setTo } = await readBody(req);
+    const { search, decision: filterDecision, status, hasNotes, duplicates, tag, setTo } = await readBody(req);
     if (![null, 'keep', 'remove'].includes(setTo)) return sendJson(res, 400, { error: 'invalid setTo' });
     const db = getDb();
-    const { where, params } = buildWhere(db, { search, decision: filterDecision, status });
+    const { where, params } = buildWhere(db, { search, decision: filterDecision, status, hasNotes, duplicates, tag });
     const fullWhere = where ? `${where} AND applied_at IS NULL` : 'WHERE applied_at IS NULL';
     const matched = db.prepare(`SELECT COUNT(*) as n FROM friends ${fullWhere};`).get(...params).n;
     db.prepare(`UPDATE friends SET decision=?, decided_at=? ${fullWhere};`).run(

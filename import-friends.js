@@ -12,8 +12,8 @@ function main() {
   const friends = JSON.parse(fs.readFileSync(FRIENDS_JSON_FILE, 'utf8'));
   const db = getDb();
 
-  const getExistingStatus = db.prepare(`SELECT presence_status FROM friends WHERE id=?;`);
-  const logPresence = db.prepare(`INSERT INTO presence_log (friend_id, status, changed_at) VALUES (?, ?, ?);`);
+  const getExisting = db.prepare(`SELECT presence_status, nickname, displayname FROM friends WHERE id=?;`);
+  const logChange = db.prepare(`INSERT INTO change_log (friend_id, field, value, changed_at) VALUES (?, ?, ?, ?);`);
 
   const upsert = db.prepare(`
     INSERT INTO friends (id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, org_name, org_url, org_redacted, raw_json)
@@ -37,19 +37,23 @@ function main() {
     for (const f of rows) {
       const org = extractOrg(f);
       const newStatus = f.presence?.status ?? null;
-      // Ligne d'historique seulement si le statut a vraiment changé depuis
+      const newNickname = f.nickname ?? null;
+      const newDisplayname = f.displayname ?? null;
+      // Ligne d'historique seulement si la valeur a vraiment changé depuis
       // le dernier import connu — sinon chaque simple rafraîchissement (même
       // sans changement réel) gonflerait la table pour rien. Le tout premier
       // import d'un ami (pas de ligne existante) n'écrit rien non plus : ce
       // n'est pas une "transition", juste l'état de départ.
-      const existing = getExistingStatus.get(f.id);
-      if (existing && existing.presence_status !== newStatus) {
-        logPresence.run(f.id, newStatus, now);
+      const existing = getExisting.get(f.id);
+      if (existing) {
+        if (existing.presence_status !== newStatus) logChange.run(f.id, 'presence', newStatus, now);
+        if (existing.nickname !== newNickname) logChange.run(f.id, 'nickname', newNickname, now);
+        if (existing.displayname !== newDisplayname) logChange.run(f.id, 'displayname', newDisplayname, now);
       }
       upsert.run({
         id: f.id,
-        nickname: f.nickname ?? null,
-        displayname: f.displayname ?? null,
+        nickname: newNickname,
+        displayname: newDisplayname,
         avatar: f.avatar ?? null,
         presence_status: newStatus,
         presence_since: f.presence?.since ?? null,

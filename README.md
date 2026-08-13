@@ -104,13 +104,20 @@ ever overwriting a decision already made (the `decision` column).
 | `org_name`, `org_url`, `org_redacted` | main organization (parsed from Spectrum's badge list — see below), its URL, and whether it's hidden (privacy) |
 | `raw_json` | full raw friend object, for reference |
 | `notes` | free-text note, set from the web interface, included in search |
+| `tags` | comma-separated free-text tags ("org mate,streamer"), set from the web interface, included in search and filterable |
 | `decision` | `NULL` (undecided) / `'keep'` / `'remove'` — **the only field that matters for step 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | audit trail |
 
-A separate `presence_log` table records every observed status transition
-(offline → online, etc.) at each import — the web interface's per-friend
-🕒 button reads from it (see below). Not real-time: granularity depends on
-how often you fetch/import, manually or via auto-refresh.
+A separate `change_log` table records every observed change (presence
+status, nickname, display name) at each import — the web interface's
+per-friend 🕒 button and the global activity feed both read from it (see
+below). Not real-time: granularity depends on how often you fetch/import,
+manually or via auto-refresh.
+
+> Upgrading from v1.0.11? That version briefly shipped a presence-only
+> `presence_log` table. It's migrated automatically into `change_log` (same
+> rows, `field='presence'`) the first time you run a newer version — nothing
+> to do manually, and no history is lost.
 
 **Main organization**: extracted from Spectrum's `meta.badges` (the badge
 whose URL contains `/orgs/` is the org; there's at most one). Two edge cases
@@ -152,10 +159,17 @@ Beyond the basics:
   to private on RSI — distinct from having no org at all, which shows
   nothing.
 - **Connection history**: the 🕒 button next to a friend's status opens the
-  recorded online/offline/... transitions for that friend (up to the last
-  50), a bit like VRCX's friend log. Populated by `presence_log` (see the
+  recorded status/nickname/display-name changes for that friend (up to the
+  last 50), a bit like VRCX's friend log. Populated by `change_log` (see the
   schema above) — only as fine-grained as how often the data gets
   refreshed.
+- **Activity feed** (📰 button, header): the same `change_log` data, but
+  merged across every friend into one chronological feed instead of opening
+  the history popup one friend at a time.
+- **Tags**: free-text, comma-separated, per friend (e.g. "org mate,
+  streamer") — filterable via the toolbar dropdown, included in search,
+  exported in the CSV. Multi-word tags are supported; matching is
+  case-sensitive and exact per tag (a "org" tag won't match "reorganized").
 - **Auto-refresh**: in the setup panel, an optional toggle re-runs fetch +
   import on a timer (15 min to once a day) without touching anything
   manually — useful together with connection history, so it actually has

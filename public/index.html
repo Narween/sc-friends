@@ -149,8 +149,8 @@
   .status-online, .status-playing { background: var(--keep); }
   .status-away { background: #e5b800; }
   .status-offline { background: var(--text-dim); }
-  .notes-input { width: 160px; font-size: 12px; padding: 4px 6px; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
-  .notes-input.saving { border-color: var(--accent); }
+  .notes-input, .tags-input { width: 160px; font-size: 12px; padding: 4px 6px; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+  .notes-input.saving, .tags-input.saving { border-color: var(--accent); }
   .actions { display: flex; gap: 6px; }
   .actions button { padding: 4px 10px; font-size: 12px; }
   .actions button.active-keep { background: var(--keep); color: #06210f; border-color: var(--keep); }
@@ -202,10 +202,17 @@
       <button id="themeLight" data-theme-choice="light" title="Clair / Light">☀</button>
     </div>
     <button id="toggleSetup" data-i18n="setup.toggle"></button>
+    <button id="toggleActivity" data-i18n="activity.toggle"></button>
     <button id="toggleAbout" data-i18n="about.toggle"></button>
     <a id="backupBtn" href="/api/backup" download data-i18n="backup.button"></a>
   </div>
 </header>
+
+<section class="panel" id="activityPanel" style="display:none">
+  <h2 data-i18n="activity.title"></h2>
+  <p class="dim" data-i18n="activity.intro"></p>
+  <div id="activityBody"></div>
+</section>
 
 <section class="panel" id="aboutPanel" style="display:none">
   <h2 data-i18n="about.title"></h2>
@@ -291,6 +298,9 @@
   <button id="orderBtn">↑ asc</button>
   <label class="check-inline"><input type="checkbox" id="hasNotesFilter" /> <span data-i18n="toolbar.hasNotes"></span></label>
   <label class="check-inline"><input type="checkbox" id="duplicatesFilter" /> <span data-i18n="toolbar.duplicates"></span></label>
+  <select id="tagFilter">
+    <option value="" data-i18n="toolbar.tagAll"></option>
+  </select>
   <a id="exportBtn" href="/api/export.csv" download data-i18n="export.button"></a>
 
   <div class="bulk">
@@ -327,6 +337,7 @@
         <th data-i18n="table.lastSeen"></th>
         <th data-i18n="table.orgs"></th>
         <th data-i18n="table.notes"></th>
+        <th data-i18n="table.tags"></th>
         <th data-i18n="table.decision"></th>
       </tr>
     </thead>
@@ -441,7 +452,7 @@ document.getElementById('themeDark').addEventListener('click', () => setTheme('d
 document.getElementById('themeLight').addEventListener('click', () => setTheme('light'));
 applyTheme();
 
-const state = { search: '', decision: 'all', status: 'all', hasNotes: false, duplicates: false, sort: 'presence_since', order: 'asc', page: 1, pageSize: 50 };
+const state = { search: '', decision: 'all', status: 'all', hasNotes: false, duplicates: false, tag: '', sort: 'presence_since', order: 'asc', page: 1, pageSize: 50 };
 
 const el = (id) => document.getElementById(id);
 
@@ -472,7 +483,7 @@ async function loadSummary() {
 function buildQuery(extra) {
   const p = new URLSearchParams({
     search: state.search, decision: state.decision, status: state.status,
-    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0',
+    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0', tag: state.tag,
     sort: state.sort, order: state.order, page: state.page, pageSize: state.pageSize,
     ...extra,
   });
@@ -482,7 +493,7 @@ function buildQuery(extra) {
 function buildFilterQuery() {
   const p = new URLSearchParams({
     search: state.search, decision: state.decision, status: state.status,
-    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0',
+    hasNotes: state.hasNotes ? '1' : '0', duplicates: state.duplicates ? '1' : '0', tag: state.tag,
   });
   return p.toString();
 }
@@ -527,6 +538,7 @@ async function loadRows() {
         <td>${fmtDate(f.presence_since)}</td>
         <td>${f.common_communities_count}</td>
         <td><input type="text" class="notes-input" data-id="${f.id}" value="${escapeHtml(f.notes || '')}" placeholder="${escapeHtml(t('row.notesPlaceholder'))}"></td>
+        <td><input type="text" class="tags-input" data-id="${f.id}" value="${escapeHtml(f.tags || '')}" placeholder="${escapeHtml(t('row.tagsPlaceholder'))}"></td>
         <td>${badge}</td>
       </tr>`;
   }).join('');
@@ -550,6 +562,28 @@ async function loadRows() {
       input.classList.remove('saving');
     }, 500));
   });
+
+  el('rows').querySelectorAll('.tags-input').forEach((input) => {
+    input.addEventListener('input', debounce(async () => {
+      const id = input.dataset.id;
+      input.classList.add('saving');
+      const res = await fetch(`/api/friends/${encodeURIComponent(id)}/tags`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: input.value }),
+      });
+      const data = await res.json();
+      input.value = data.tags || '';
+      input.classList.remove('saving');
+      loadTagFilterOptions();
+    }, 500));
+  });
+}
+
+function historyFieldLabel(field) {
+  if (field === 'presence') return t('row.historyFieldPresence');
+  if (field === 'nickname') return t('row.historyFieldNickname');
+  if (field === 'displayname') return t('row.historyFieldDisplayname');
+  return field;
 }
 
 async function showHistory(id, btn) {
@@ -562,7 +596,7 @@ async function showHistory(id, btn) {
   const res = await fetch(`/api/friends/${encodeURIComponent(id)}/history`);
   const entries = await res.json();
   el('historyPopupBody').innerHTML = entries.length
-    ? entries.map((e) => `<div class="history-entry">${new Date(e.changed_at).toLocaleString()} — ${escapeHtml(e.status || t('row.unknown'))}</div>`).join('')
+    ? entries.map((e) => `<div class="history-entry">${new Date(e.changed_at).toLocaleString()} — ${historyFieldLabel(e.field)}: ${escapeHtml(e.value || t('row.unknown'))}</div>`).join('')
     : `<div class="history-empty">${t('row.historyEmpty')}</div>`;
   popup.dataset.forId = id;
   const rect = btn.getBoundingClientRect();
@@ -586,6 +620,20 @@ el('decisionFilter').addEventListener('change', () => { state.decision = el('dec
 el('statusFilter').addEventListener('change', () => { state.status = el('statusFilter').value; state.page = 1; loadRows(); });
 el('hasNotesFilter').addEventListener('change', () => { state.hasNotes = el('hasNotesFilter').checked; state.page = 1; loadRows(); });
 el('duplicatesFilter').addEventListener('change', () => { state.duplicates = el('duplicatesFilter').checked; state.page = 1; loadRows(); });
+el('tagFilter').addEventListener('change', () => { state.tag = el('tagFilter').value; state.page = 1; loadRows(); });
+async function loadTagFilterOptions() {
+  const tags = await (await fetch('/api/tags')).json();
+  const select = el('tagFilter');
+  const current = select.value;
+  select.querySelectorAll('option:not([value=""])').forEach((o) => o.remove());
+  for (const tag of tags) {
+    const opt = document.createElement('option');
+    opt.value = tag;
+    opt.textContent = tag;
+    select.appendChild(opt);
+  }
+  select.value = current;
+}
 el('sort').addEventListener('change', () => { state.sort = el('sort').value; loadRows(); });
 el('orderBtn').addEventListener('click', () => {
   state.order = state.order === 'asc' ? 'desc' : 'asc';
@@ -611,7 +659,11 @@ async function bulkSet(setTo) {
   if (!confirm(t('confirmBulk', { label, count: el('matchCount').textContent }))) return;
   const res = await fetch('/api/bulk-decision', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ search: state.search, decision: state.decision, status: state.status, setTo }),
+    body: JSON.stringify({
+      search: state.search, decision: state.decision, status: state.status,
+      hasNotes: state.hasNotes, duplicates: state.duplicates, tag: state.tag,
+      setTo,
+    }),
   });
   const data = await res.json();
   alert(t('unit.updated', { n: data.updated }));
@@ -634,6 +686,21 @@ el('toggleSetup').addEventListener('click', () => {
   panel.style.display = show ? 'block' : 'none';
   if (show) loadStatus();
 });
+
+// --- Panneau "activité" (flux global, toutes lignes de change_log
+// mélangées, avec le lien vers le profil RSI de chaque ami concerné) ---
+el('toggleActivity').addEventListener('click', async () => {
+  const panel = el('activityPanel');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) await loadActivity();
+});
+async function loadActivity() {
+  const entries = await (await fetch('/api/activity?limit=100')).json();
+  el('activityBody').innerHTML = entries.length
+    ? entries.map((e) => `<div class="history-entry">${new Date(e.changed_at).toLocaleString()} — <a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(e.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.nickname)}</a> — ${historyFieldLabel(e.field)}: ${escapeHtml(e.value || t('row.unknown'))}</div>`).join('')
+    : `<div class="history-empty">${t('row.historyEmpty')}</div>`;
+}
 
 // --- Panneau "à propos" ---
 let aboutData = null;
@@ -813,6 +880,7 @@ el('applyBtn').addEventListener('click', () => {
   const isEmpty = await loadStatus();
   if (isEmpty) el('setupPanel').style.display = 'block';
   loadSettings();
+  loadTagFilterOptions();
 
   aboutData = await (await fetch('/api/about')).json();
   document.title = `SC-Friends v${aboutData.version}`;
