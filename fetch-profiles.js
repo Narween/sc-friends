@@ -100,51 +100,75 @@ async function main() {
   log('cli.profiles.start', { count: friends.length });
 
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-
   let done = 0;
-  for (let i = 0; i < friends.length; i += BATCH_SIZE) {
-    const batch = friends.slice(i, i + BATCH_SIZE);
 
-    for (const friend of batch) {
-      try {
-        const enlistedAt = await scrapeEnlisted(page, friend.nickname);
-        await sleep(randomBetween(PAGE_PAUSE_MS));
-        const affiliates = await scrapeAffiliates(page, friend.nickname);
+  try {
+    const page = await browser.newPage();
 
-        const now = new Date().toISOString();
-        const existing = getExisting.get(friend.id);
-        if (existing && existing.enlisted_at !== enlistedAt) {
-          logChange.run(friend.id, 'enlisted_at', enlistedAt, now);
+    for (let i = 0; i < friends.length; i += BATCH_SIZE) {
+      const batch = friends.slice(i, i + BATCH_SIZE);
+
+      for (const friend of batch) {
+        try {
+          const enlistedAt = await scrapeEnlisted(page, friend.nickname);
+
+          // RSI affiche toujours "Enlisted" sur un profil valide (c'est lié
+          // à la création du compte, jamais vide) — un null ici veut donc
+          // dire que la page ne s'est pas chargée comme attendu (404 sur
+          // un pseudo renommé, structure changée...), pas que l'info a
+          // disparu. Playwright ne lève pas d'exception sur un 404 par
+          // défaut, donc ce cas ne passerait jamais par le catch plus bas
+          // s'il n'était pas détecté ici. On saute tout l'ami plutôt que
+          // de remplacer des orgs affiliées réelles par une liste vide, ou
+          // une date d'enlistement connue par du vide — et on ne touche
+          // pas profile_fetched_at, pour qu'il soit retenté au prochain
+          // passage.
+          if (enlistedAt === null) {
+            err('cli.profiles.error', {
+              nickname: friend.nickname,
+              message: 'no Enlisted field found (renamed handle? page structure changed?)',
+            });
+            continue;
+          }
+
+          await sleep(randomBetween(PAGE_PAUSE_MS));
+          const affiliates = await scrapeAffiliates(page, friend.nickname);
+
+          const now = new Date().toISOString();
+          const existing = getExisting.get(friend.id);
+          if (existing && existing.enlisted_at !== enlistedAt) {
+            logChange.run(friend.id, 'enlisted_at', enlistedAt, now);
+          }
+          const prevNames = getExistingAffiliates.all(friend.id).map((r) => r.org_name).join(',');
+          const newNames = affiliates.map((a) => a.name).sort().join(',');
+          if (prevNames !== newNames) {
+            logChange.run(friend.id, 'affiliate_orgs', newNames || null, now);
+          }
+
+          const tx = db.transaction(() => {
+            updateFriend.run(enlistedAt, now, friend.id);
+            deleteAffiliates.run(friend.id);
+            for (const a of affiliates) insertAffiliate.run(friend.id, a.name, a.url, a.rank);
+          });
+          tx();
+
+          done++;
+          log('cli.profiles.progress', { done, total: friends.length, nickname: friend.nickname });
+        } catch (e) {
+          err('cli.profiles.error', { nickname: friend.nickname, message: String(e?.message || e) });
         }
-        const prevNames = getExistingAffiliates.all(friend.id).map((r) => r.org_name).join(',');
-        const newNames = affiliates.map((a) => a.name).sort().join(',');
-        if (prevNames !== newNames) {
-          logChange.run(friend.id, 'affiliate_orgs', newNames || null, now);
-        }
+      }
 
-        const tx = db.transaction(() => {
-          updateFriend.run(enlistedAt, now, friend.id);
-          deleteAffiliates.run(friend.id);
-          for (const a of affiliates) insertAffiliate.run(friend.id, a.name, a.url, a.rank);
-        });
-        tx();
-
-        done++;
-        log('cli.profiles.progress', { done, total: friends.length, nickname: friend.nickname });
-      } catch (e) {
-        err('cli.profiles.error', { nickname: friend.nickname, message: String(e?.message || e) });
+      if (i + BATCH_SIZE < friends.length) {
+        const pauseMs = randomBetween(BATCH_PAUSE_MS);
+        log('cli.profiles.pausing', { seconds: Math.round(pauseMs / 1000) });
+        await sleep(pauseMs);
       }
     }
-
-    if (i + BATCH_SIZE < friends.length) {
-      const pauseMs = randomBetween(BATCH_PAUSE_MS);
-      log('cli.profiles.pausing', { seconds: Math.round(pauseMs / 1000) });
-      await sleep(pauseMs);
-    }
+  } finally {
+    await browser.close();
   }
 
-  await browser.close();
   log('cli.profiles.done', { count: done });
 }
 
