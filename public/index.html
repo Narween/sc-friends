@@ -127,7 +127,25 @@
   .nickname a { color: inherit; text-decoration: none; }
   .nickname a:hover { text-decoration: underline; }
   .displayname { color: var(--text-dim); font-size: 12px; }
+  .org { font-size: 12px; }
+  .org a { color: var(--accent); text-decoration: none; }
+  .org a:hover { text-decoration: underline; }
+  .org-redacted { color: var(--text-dim); font-style: italic; }
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .history-btn {
+    background: none; border: none; padding: 0 0 0 6px; font-size: 12px;
+    cursor: pointer; opacity: 0.6; line-height: 1;
+  }
+  .history-btn:hover { opacity: 1; border-color: transparent; }
+  .history-popup {
+    position: fixed; z-index: 50; max-width: 280px; max-height: 320px; overflow-y: auto;
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.35); font-size: 12px;
+  }
+  .history-popup-title { font-weight: 600; margin-bottom: 6px; }
+  .history-entry { padding: 3px 0; border-bottom: 1px solid var(--border); color: var(--text-dim); }
+  .history-entry:last-child { border-bottom: none; }
+  .history-empty { color: var(--text-dim); font-style: italic; }
   .status-online, .status-playing { background: var(--keep); }
   .status-away { background: #e5b800; }
   .status-offline { background: var(--text-dim); }
@@ -153,6 +171,8 @@
   .setup-steps li:last-child { border-bottom: none; }
   .step-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .step-desc { flex: 1; min-width: 260px; }
+  .auto-refresh-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .auto-refresh-box .hint { flex-basis: 100%; margin: 4px 0 0; }
   .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(127,146,163,0.15); color: var(--text-dim); white-space: nowrap; }
   .status.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .status.missing { background: rgba(229,72,77,0.15); color: var(--remove); }
@@ -225,6 +245,22 @@
       <pre class="task-log" id="log-import"></pre>
     </li>
   </ul>
+
+  <div class="auto-refresh-box">
+    <label class="check-inline">
+      <input type="checkbox" id="autoRefreshEnabled" />
+      <span data-i18n="setup.autoRefresh.label"></span>
+    </label>
+    <select id="autoRefreshInterval">
+      <option value="15" data-i18n="setup.autoRefresh.every15"></option>
+      <option value="30" data-i18n="setup.autoRefresh.every30"></option>
+      <option value="60" data-i18n="setup.autoRefresh.every60"></option>
+      <option value="180" data-i18n="setup.autoRefresh.every180"></option>
+      <option value="360" data-i18n="setup.autoRefresh.every360"></option>
+      <option value="1440" data-i18n="setup.autoRefresh.every1440"></option>
+    </select>
+    <p class="hint" id="autoRefreshStatus"></p>
+  </div>
 </section>
 
 <div id="busyBanner" class="busy-banner" style="display:none" data-i18n="apply.busyBanner"></div>
@@ -323,6 +359,11 @@
     <pre id="applyLog" class="task-log"></pre>
   </section>
 </main>
+
+<div id="historyPopup" class="history-popup" style="display:none">
+  <div class="history-popup-title" data-i18n="row.historyTitle"></div>
+  <div id="historyPopupBody"></div>
+</div>
 
 <footer data-i18n="footer.text"></footer>
 
@@ -466,13 +507,21 @@ async function loadRows() {
           <button data-id="${f.id}" data-set="remove" class="${f.decision === 'remove' ? 'active-remove' : ''}">${t('row.remove')}</button>
           <button data-id="${f.id}" data-set="" class="${f.decision === null ? 'active-undecided' : ''}">${t('row.undecided')}</button>
         </div>`;
+    let orgHtml = '';
+    if (f.org_redacted) {
+      orgHtml = `<div class="org org-redacted">${t('row.orgRedacted')}</div>`;
+    } else if (f.org_name) {
+      orgHtml = `<div class="org"><a href="${escapeHtml(f.org_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.org_name)}</a></div>`;
+    }
     return `
       <tr class="${rowCls}" data-row-id="${f.id}">
         <td><div class="friend">
           <img src="${escapeHtml(f.avatar || '')}" onerror="this.style.visibility='hidden'" />
-          <div><div class="nickname"><a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(f.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.nickname)}</a></div><div class="displayname">${escapeHtml(f.displayname)}</div></div>
+          <div><div class="nickname"><a href="https://robertsspaceindustries.com/citizens/${encodeURIComponent(f.nickname)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.nickname)}</a></div><div class="displayname">${escapeHtml(f.displayname)}</div>${orgHtml}</div>
         </div></td>
-        <td><span class="status-dot status-${f.presence_status || 'offline'}"></span>${f.presence_status || '?'}</td>
+        <td><span class="status-dot status-${f.presence_status || 'offline'}"></span>${f.presence_status || '?'}
+          <button type="button" class="history-btn" data-id="${f.id}" title="${escapeHtml(t('row.historyTitle'))}">🕒</button>
+        </td>
         <td>${fmtDate(f.presence_since)}</td>
         <td>${f.common_communities_count}</td>
         <td><input type="text" class="notes-input" data-id="${f.id}" value="${escapeHtml(f.notes || '')}" placeholder="${escapeHtml(t('row.notesPlaceholder'))}"></td>
@@ -480,8 +529,12 @@ async function loadRows() {
       </tr>`;
   }).join('');
 
-  el('rows').querySelectorAll('button[data-id]').forEach((btn) => {
+  el('rows').querySelectorAll('button[data-id][data-set]').forEach((btn) => {
     btn.addEventListener('click', () => setDecision(btn.dataset.id, btn.dataset.set || null));
+  });
+
+  el('rows').querySelectorAll('.history-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => showHistory(btn.dataset.id, e.currentTarget));
   });
 
   el('rows').querySelectorAll('.notes-input').forEach((input) => {
@@ -496,6 +549,31 @@ async function loadRows() {
     }, 500));
   });
 }
+
+async function showHistory(id, btn) {
+  const popup = el('historyPopup');
+  // Deuxième clic sur le même bouton : referme au lieu de rouvrir.
+  if (popup.style.display !== 'none' && popup.dataset.forId === id) {
+    popup.style.display = 'none';
+    return;
+  }
+  const res = await fetch(`/api/friends/${encodeURIComponent(id)}/history`);
+  const entries = await res.json();
+  el('historyPopupBody').innerHTML = entries.length
+    ? entries.map((e) => `<div class="history-entry">${new Date(e.changed_at).toLocaleString()} — ${escapeHtml(e.status || t('row.unknown'))}</div>`).join('')
+    : `<div class="history-empty">${t('row.historyEmpty')}</div>`;
+  popup.dataset.forId = id;
+  const rect = btn.getBoundingClientRect();
+  popup.style.top = `${rect.bottom + 4}px`;
+  popup.style.left = `${Math.min(rect.left, window.innerWidth - 300)}px`;
+  popup.style.display = 'block';
+}
+document.addEventListener('click', (e) => {
+  const popup = el('historyPopup');
+  if (popup.style.display === 'none') return;
+  if (e.target.closest('.history-btn') || e.target.closest('#historyPopup')) return;
+  popup.style.display = 'none';
+});
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -628,6 +706,45 @@ el('confirmLogin').addEventListener('click', () => fetch('/api/login-confirm', {
 el('runFetch').addEventListener('click', () => runTask('fetch', 'log-fetch', { onDone: () => loadStatus() }));
 el('runImport').addEventListener('click', () => runTask('import', 'log-import', { onDone: () => { loadStatus(); loadSummary(); loadRows(); } }));
 
+// --- Auto-refresh (fetch + import périodiques, piloté côté serveur) ---
+// Le vrai déclenchement vit dans server.js (setInterval) même appli fermée
+// puis rouverte plus tard reprend le réglage sauvegardé. Côté page, on se
+// contente d'afficher l'état et de sonder /api/settings pour détecter
+// qu'un rafraîchissement (auto ou manuel, peu importe la source) vient de
+// se terminer et recharger le tableau — plus simple et plus robuste qu'un
+// flux SSE dédié qui entrerait en conflit avec celui du panneau de setup.
+let lastKnownRefreshAt = null;
+async function loadSettings() {
+  const s = await (await fetch('/api/settings')).json();
+  el('autoRefreshEnabled').checked = s.autoRefreshEnabled;
+  el('autoRefreshInterval').value = String(s.autoRefreshIntervalMinutes);
+  el('autoRefreshStatus').textContent = s.lastRefreshAt
+    ? t('setup.autoRefresh.status', {
+        last: new Date(s.lastRefreshAt).toLocaleString(),
+        next: s.nextRefreshAt ? new Date(s.nextRefreshAt).toLocaleString() : '—',
+      })
+    : t('setup.autoRefresh.never');
+  if (lastKnownRefreshAt !== null && s.lastRefreshAt && s.lastRefreshAt !== lastKnownRefreshAt) {
+    loadStatus();
+    loadSummary();
+    loadRows();
+  }
+  lastKnownRefreshAt = s.lastRefreshAt;
+}
+async function saveAutoRefreshSettings() {
+  await fetch('/api/settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      autoRefreshEnabled: el('autoRefreshEnabled').checked,
+      autoRefreshIntervalMinutes: parseInt(el('autoRefreshInterval').value, 10),
+    }),
+  });
+  loadSettings();
+}
+el('autoRefreshEnabled').addEventListener('change', saveAutoRefreshSettings);
+el('autoRefreshInterval').addEventListener('change', saveAutoRefreshSettings);
+setInterval(loadSettings, 60000);
+
 // --- Suppression réelle ---
 el('confirmText').addEventListener('input', () => {
   el('applyBtn').disabled = el('confirmText').value !== t('confirmWord');
@@ -693,6 +810,7 @@ el('applyBtn').addEventListener('click', () => {
 
   const isEmpty = await loadStatus();
   if (isEmpty) el('setupPanel').style.display = 'block';
+  loadSettings();
 
   aboutData = await (await fetch('/api/about')).json();
   document.title = `SC-Friends v${aboutData.version}`;

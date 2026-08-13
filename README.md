@@ -94,10 +94,24 @@ ever overwriting a decision already made (the `decision` column).
 | `nickname`, `displayname`, `avatar` | displayed info |
 | `presence_status`, `presence_since` | presence status and Unix timestamp of its last change |
 | `common_communities_count` | number of orgs/communities in common |
+| `org_name`, `org_url`, `org_redacted` | main organization (parsed from Spectrum's badge list — see below), its URL, and whether it's hidden (privacy) |
 | `raw_json` | full raw friend object, for reference |
 | `notes` | free-text note, set from the web interface, included in search |
 | `decision` | `NULL` (undecided) / `'keep'` / `'remove'` — **the only field that matters for step 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | audit trail |
+
+A separate `presence_log` table records every observed status transition
+(offline → online, etc.) at each import — the web interface's per-friend
+🕒 button reads from it (see below). Not real-time: granularity depends on
+how often you fetch/import, manually or via auto-refresh.
+
+**Main organization**: extracted from Spectrum's `meta.badges` (the badge
+whose URL contains `/orgs/` is the org; there's at most one). Two edge cases
+worth knowing: a friend can genuinely belong to an org literally named
+"REDACTED" (has a real URL, not a privacy setting), which is why detection
+keys off the URL, not the badge text; and a friend with organization
+visibility set to private shows a `[REDACTED]` badge with **no** URL — that
+one is reported as "hidden", distinctly from having no org at all.
 
 ### 4. Decide (`mark-candidates.js`) — 100% local, no network calls
 
@@ -126,6 +140,23 @@ Beyond the basics:
 - **Nicknames link to the RSI citizen profile**
   (`robertsspaceindustries.com/citizens/<nickname>`) — click through to check
   a friend's profile before deciding.
+- **Main organization** shown under the name, clickable when public. Shows
+  "hidden (private)" explicitly when the friend has set their org visibility
+  to private on RSI — distinct from having no org at all, which shows
+  nothing.
+- **Connection history**: the 🕒 button next to a friend's status opens the
+  recorded online/offline/... transitions for that friend (up to the last
+  50), a bit like VRCX's friend log. Populated by `presence_log` (see the
+  schema above) — only as fine-grained as how often the data gets
+  refreshed.
+- **Auto-refresh**: in the setup panel, an optional toggle re-runs fetch +
+  import on a timer (15 min to once a day) without touching anything
+  manually — useful together with connection history, so it actually has
+  something to log. Requires a saved session (`auth.json`); never opens the
+  login browser on its own. Deliberately capped at a 5-minute minimum: this
+  drives a real Playwright browser against Spectrum, and hammering it every
+  few seconds would look like scraping abuse, not to mention friend presence
+  doesn't change that fast anyway.
 - **Per-friend notes**, free text, auto-saved (debounced) as you type,
   included in the search box alongside nickname/display name.
 - **Filters**: decision, presence status, "has a note", and "possible

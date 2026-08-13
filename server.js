@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { getDb } = require('./lib/db');
+const { getDb, getSetting, setSetting } = require('./lib/db');
 const { AUTH_FILE, FRIENDS_JSON_FILE, DB_FILE, LOGIN_SIGNAL_FILE } = require('./lib/paths');
 const { t, available } = require('./lib/i18n');
 
@@ -38,6 +38,107 @@ function broadcastLine(name, line) {
 function broadcastDone(name, code) {
   const st = getTaskState(name);
   for (const res of st.sseClients) res.write(`event: done\ndata: ${code}\n\n`);
+}
+
+// Pose le verrou "en cours" de façon synchrone, avant le moindre await —
+// sinon deux déclenchements presque simultanés (bouton + auto-refresh, ou
+// deux boutons) passent tous les deux la vérification `st.running` avant que
+// l'un d'eux n'ait eu la chance de poser le verrou (dangereux pour "apply",
+// qui pilote un vrai navigateur contre le vrai site).
+function lockTask(name) {
+  const st = getTaskState(name);
+  st.running = true;
+  st.log = [];
+  st.exitCode = null;
+  return st;
+}
+
+// Lance effectivement le script (le verrou doit déjà avoir été posé par
+// lockTask juste avant). Utilisé à la fois par la route HTTP /api/run/:name
+// et par le scheduler d'auto-refresh interne — les deux veulent la même
+// mécanique de spawn + streaming SSE + résolution du code de sortie.
+function runScript(name, body = {}) {
+  const st = getTaskState(name);
+  const task = TASKS[name];
+  const args = [path.join(__dirname, task.script), ...(task.baseArgs || [])];
+  if (name === 'apply' && Number.isInteger(body.limit) && body.limit > 0) {
+    args.push('--limit', String(body.limit));
+  }
+
+  // process.execPath + ELECTRON_RUN_AS_NODE : fonctionne aussi bien en
+  // usage CLI pur (execPath = binaire node, la variable est ignorée) que
+  // packagé dans Electron (execPath = l'exe de l'appli, qui se comporte
+  // alors comme un node autonome pour ce process enfant — pas besoin d'un
+  // node système sur la machine de l'utilisateur final).
+  // cwd: en packagé, __dirname vit dans app.asar (chemin virtuel) — Windows
+  // ne sait pas y faire CreateProcess (ENOENT trompeur, qui nomme
+  // l'exécutable alors que c'est le cwd le vrai coupable). Les scripts
+  // enfants ne se servent pas du cwd pour localiser leurs fichiers (ils
+  // utilisent SC_FRIENDS_DATA_DIR, transmis via env plus bas), donc n'importe
+  // quel vrai dossier disque convient ; resourcesPath (posé par main.js
+  // uniquement en packagé) en est un, garanti.
+  const child = spawn(process.execPath, args, {
+    cwd: process.env.SC_FRIENDS_RESOURCES_PATH || __dirname,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      // Langue active côté navigateur, transmise au script pour que ses
+      // logs (visibles dans le panneau SSE) parlent la même langue que
+      // l'interface plutôt qu'une langue fixée en dur.
+      SC_FRIENDS_LANG: available().includes(body.lang) ? body.lang : 'fr',
+    },
+  });
+  const onData = (chunk) => chunk.toString().split('\n').filter(Boolean).forEach((l) => broadcastLine(name, l));
+  child.stdout.on('data', onData);
+  child.stderr.on('data', onData);
+  return new Promise((resolve) => {
+    child.on('close', (code) => {
+      st.running = false;
+      st.exitCode = code;
+      broadcastDone(name, code);
+      resolve(code);
+    });
+    // Si spawn() échoue carrément (exécutable introuvable, permission
+    // refusée...), 'close' ne se déclenche jamais : sans ce handler, la
+    // tâche restait "en cours" indéfiniment sans jamais rien afficher.
+    child.on('error', (spawnErr) => {
+      broadcastLine(name, `spawn error: ${spawnErr.message}`);
+      st.running = false;
+      st.exitCode = -1;
+      broadcastDone(name, -1);
+      resolve(-1);
+    });
+  });
+}
+
+// --- Auto-refresh : relance fetch puis import à intervalle régulier, sans
+// action manuelle. Désactivé par défaut. Nécessite une session déjà
+// sauvegardée (auth.json) — jamais d'ouverture automatique du navigateur de
+// login, ça resterait toujours un geste explicite.
+let autoRefreshTimer = null;
+
+async function runAutoRefresh() {
+  if (!fs.existsSync(AUTH_FILE)) return;
+  if (getTaskState('fetch').running || getTaskState('import').running) return;
+  lockTask('fetch');
+  const fetchCode = await runScript('fetch');
+  if (fetchCode !== 0) return;
+  lockTask('import');
+  const importCode = await runScript('import');
+  if (importCode === 0) {
+    setSetting('last_refresh_at', new Date().toISOString());
+  }
+}
+
+function scheduleAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+  const enabled = getSetting('auto_refresh_enabled', '0') === '1';
+  const minutes = Math.max(5, parseInt(getSetting('auto_refresh_interval_minutes', '60'), 10) || 60);
+  if (!enabled) return;
+  autoRefreshTimer = setInterval(runAutoRefresh, minutes * 60 * 1000);
 }
 
 function buildWhere(db_, { search, decision, status, hasNotes, duplicates }) {
@@ -182,7 +283,7 @@ const server = http.createServer(async (req, res) => {
     const { where, params } = buildWhere(db, { search, decision, status, hasNotes, duplicates });
     const rows = db
       .prepare(
-        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, decision, notes
+        `SELECT nickname, displayname, presence_status, presence_since, common_communities_count, org_name, org_redacted, decision, notes
          FROM friends ${where}
          ORDER BY nickname ASC;`
       )
@@ -191,13 +292,14 @@ const server = http.createServer(async (req, res) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'decision', 'notes'];
+    const header = ['nickname', 'displayname', 'status', 'last_seen', 'common_orgs', 'main_org', 'decision', 'notes'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push([
         r.nickname, r.displayname, r.presence_status,
         r.presence_since ? new Date(r.presence_since * 1000).toISOString() : '',
-        r.common_communities_count, r.decision || 'undecided', r.notes,
+        r.common_communities_count, r.org_redacted ? 'hidden/private' : (r.org_name || ''),
+        r.decision || 'undecided', r.notes,
       ].map(csvEscape).join(','));
     }
     // BOM en tête : sans lui, Excel devine souvent un mauvais encodage pour
@@ -237,6 +339,38 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/settings') {
+    const minutes = Math.max(5, parseInt(getSetting('auto_refresh_interval_minutes', '60'), 10) || 60);
+    const enabled = getSetting('auto_refresh_enabled', '0') === '1';
+    const lastRefreshAt = getSetting('last_refresh_at', null);
+    return sendJson(res, 200, {
+      autoRefreshEnabled: enabled,
+      autoRefreshIntervalMinutes: minutes,
+      lastRefreshAt,
+      nextRefreshAt: enabled && lastRefreshAt
+        ? new Date(new Date(lastRefreshAt).getTime() + minutes * 60000).toISOString()
+        : null,
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/settings') {
+    const { autoRefreshEnabled, autoRefreshIntervalMinutes } = await readBody(req);
+    if (typeof autoRefreshEnabled !== 'boolean') return sendJson(res, 400, { error: 'invalid autoRefreshEnabled' });
+    const minutes = Math.max(5, Math.min(1440, parseInt(autoRefreshIntervalMinutes, 10) || 60));
+    setSetting('auto_refresh_enabled', autoRefreshEnabled ? '1' : '0');
+    setSetting('auto_refresh_interval_minutes', String(minutes));
+    scheduleAutoRefresh();
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === 'GET' && /^\/api\/friends\/[^/]+\/history$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split('/')[3]);
+    const rows = getDb()
+      .prepare(`SELECT status, changed_at FROM presence_log WHERE friend_id=? ORDER BY changed_at DESC LIMIT 50;`)
+      .all(id);
+    return sendJson(res, 200, rows);
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/summary') {
     const rows = getDb()
       .prepare(`SELECT COALESCE(decision, 'undecided') as decision, (applied_at IS NOT NULL) as applied, COUNT(*) as n FROM friends GROUP BY decision, applied;`)
@@ -265,7 +399,7 @@ const server = http.createServer(async (req, res) => {
     const total = db.prepare(`SELECT COUNT(*) as n FROM friends ${where};`).get(...params).n;
     const rows = db
       .prepare(
-        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, decision, applied_at, apply_success, notes
+        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, org_name, org_url, org_redacted, decision, applied_at, apply_success, notes
          FROM friends ${where}
          ORDER BY ${sort} ${order} NULLS LAST
          LIMIT ? OFFSET ?;`
@@ -323,63 +457,9 @@ const server = http.createServer(async (req, res) => {
     if (!task) return sendJson(res, 404, { error: 'unknown task' });
     const st = getTaskState(name);
     if (st.running) return sendJson(res, 409, { error: 'already running' });
-    // Posé tout de suite, avant le moindre await : sinon deux requêtes
-    // arrivées presque en même temps passent toutes les deux la vérification
-    // ci-dessus avant que l'une d'elles n'ait eu la chance de poser le
-    // verrou, et on se retrouve avec deux exécutions concurrentes de la même
-    // tâche (dangereux pour "apply", qui pilote un vrai navigateur contre le
-    // vrai site).
-    st.running = true;
-    st.log = [];
-    st.exitCode = null;
-
+    lockTask(name);
     const body = await readBody(req);
-    const args = [path.join(__dirname, task.script), ...(task.baseArgs || [])];
-    if (name === 'apply' && Number.isInteger(body.limit) && body.limit > 0) {
-      args.push('--limit', String(body.limit));
-    }
-
-    // process.execPath + ELECTRON_RUN_AS_NODE : fonctionne aussi bien en
-    // usage CLI pur (execPath = binaire node, la variable est ignorée) que
-    // packagé dans Electron (execPath = l'exe de l'appli, qui se comporte
-    // alors comme un node autonome pour ce process enfant — pas besoin d'un
-    // node système sur la machine de l'utilisateur final).
-    // cwd: en packagé, __dirname vit dans app.asar (chemin virtuel) — Windows
-    // ne sait pas y faire CreateProcess (ENOENT trompeur, qui nomme
-    // l'exécutable alors que c'est le cwd le vrai coupable). Les scripts
-    // enfants ne se servent pas du cwd pour localiser leurs fichiers (ils
-    // utilisent SC_FRIENDS_DATA_DIR, transmis via env plus bas), donc n'importe
-    // quel vrai dossier disque convient ; resourcesPath (posé par main.js
-    // uniquement en packagé) en est un, garanti.
-    const child = spawn(process.execPath, args, {
-      cwd: process.env.SC_FRIENDS_RESOURCES_PATH || __dirname,
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        // Langue active côté navigateur, transmise au script pour que ses
-        // logs (visibles dans le panneau SSE) parlent la même langue que
-        // l'interface plutôt qu'une langue fixée en dur.
-        SC_FRIENDS_LANG: available().includes(body.lang) ? body.lang : 'fr',
-      },
-    });
-    const onData = (chunk) => chunk.toString().split('\n').filter(Boolean).forEach((l) => broadcastLine(name, l));
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-    child.on('close', (code) => {
-      st.running = false;
-      st.exitCode = code;
-      broadcastDone(name, code);
-    });
-    // Si spawn() échoue carrément (exécutable introuvable, permission
-    // refusée...), 'close' ne se déclenche jamais : sans ce handler, la
-    // tâche restait "en cours" indéfiniment sans jamais rien afficher.
-    child.on('error', (spawnErr) => {
-      broadcastLine(name, `spawn error: ${spawnErr.message}`);
-      st.running = false;
-      st.exitCode = -1;
-      broadcastDone(name, -1);
-    });
-
+    runScript(name, body); // fire-and-forget: la progression passe par SSE (/api/run/:name/events)
     return sendJson(res, 200, { started: true });
   }
 
@@ -434,4 +514,5 @@ server.on('error', (err) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(allLangs('cli.server.listening', { port: PORT }));
   console.log(allLangs('cli.server.tunnelHint', { port: PORT }));
+  scheduleAutoRefresh();
 });

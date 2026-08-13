@@ -94,10 +94,26 @@ Schéma de la table `friends` :
 | `nickname`, `displayname`, `avatar` | infos affichées |
 | `presence_status`, `presence_since` | statut de présence et horodatage Unix du dernier changement |
 | `common_communities_count` | nombre d'orgs/communautés en commun |
+| `org_name`, `org_url`, `org_redacted` | organisation principale (extraite des badges Spectrum — voir plus bas), son URL, et si elle est masquée (confidentialité) |
 | `raw_json` | objet ami brut complet, pour référence |
 | `notes` | note libre, saisie depuis l'interface web, incluse dans la recherche |
 | `decision` | `NULL` (indécis) / `'keep'` / `'remove'` — **le seul champ qui compte pour l'étape 5** |
 | `decided_at`, `applied_at`, `apply_success`, `apply_response` | traçabilité |
+
+Une table séparée `presence_log` enregistre chaque transition de statut
+observée (hors-ligne → en ligne, etc.) à chaque import — le bouton 🕒 par
+ami de l'interface web s'appuie dessus (voir plus bas). Pas du temps réel :
+la granularité dépend de la fréquence de récupération/import, manuelle ou
+via l'auto-refresh.
+
+**Organisation principale** : extraite des `meta.badges` de Spectrum (le
+badge dont l'url contient `/orgs/` est l'org ; il y en a au plus une). Deux
+pièges à connaître : un ami peut réellement appartenir à une org nommée
+littéralement "REDACTED" (avec une vraie url, pas un réglage de
+confidentialité), d'où une détection basée sur l'url et non le texte du
+badge ; et un ami avec la visibilité de son org réglée en privé affiche un
+badge `[REDACTED]` mais **sans** url — c'est ce cas-là qui est rapporté
+comme "masquée", distinct de l'absence totale d'org.
 
 ### 4. Décision (`mark-candidates.js`) — 100% local, aucun appel réseau
 
@@ -126,6 +142,24 @@ Au-delà des bases :
 - **Le pseudo renvoie vers la fiche RSI**
   (`robertsspaceindustries.com/citizens/<pseudo>`) — pratique pour vérifier
   le profil d'un ami avant de décider.
+- **Organisation principale** affichée sous le nom, cliquable quand elle est
+  publique. Affiche explicitement "masquée (privée)" quand l'ami a réglé la
+  visibilité de son org en privé sur RSI — distinct de l'absence totale
+  d'org, qui n'affiche rien.
+- **Historique de connexion** : le bouton 🕒 à côté du statut d'un ami ouvre
+  les transitions en ligne/hors-ligne/... enregistrées pour cet ami (jusqu'aux
+  50 dernières), un peu comme le journal ami de VRCX. Alimenté par
+  `presence_log` (voir le schéma plus haut) — aussi précis que la fréquence
+  de rafraîchissement des données, pas plus.
+- **Auto-refresh** : dans le panneau de configuration, une option relance
+  fetch + import sur une minuterie (15 min à une fois par jour) sans rien
+  toucher à la main — utile avec l'historique de connexion, pour qu'il ait
+  effectivement quelque chose à enregistrer. Nécessite une session déjà
+  sauvegardée (`auth.json`) ; n'ouvre jamais le navigateur de connexion tout
+  seul. Volontairement plafonné à un minimum de 5 minutes : ça pilote un
+  vrai navigateur Playwright contre Spectrum, et le marteler toutes les
+  quelques secondes ressemblerait à du scraping abusif — sans compter que la
+  présence d'un ami ne change pas si vite de toute façon.
 - **Notes par ami**, texte libre, sauvegardées automatiquement (avec un
   léger délai) pendant la saisie, incluses dans la recherche aux côtés du
   pseudo/nom affiché.
