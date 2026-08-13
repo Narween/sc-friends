@@ -4,6 +4,7 @@
 // le seul emplacement garanti inscriptible pour une appli installée (ex:
 // Program Files sur Windows est en lecture seule pour l'utilisateur courant).
 const { app, BrowserWindow, shell, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('node:path');
 
 const PORT = 3939;
@@ -98,6 +99,21 @@ function createWindow() {
   win.loadURL(APP_ORIGIN);
 }
 
+// Auto-update via electron-updater, branché sur les GitHub Releases déjà
+// publiées par le workflow de build (latest.yml / latest-linux.yml généré
+// par electron-builder à côté des installeurs). Windows (NSIS) et Linux
+// (AppImage) fonctionnent très bien sans certificat de signature de code.
+// macOS est volontairement exclu : Squirrel.Mac (le mécanisme d'update
+// d'Electron sur macOS) exige une app signée, et une app non signée y
+// échoue silencieusement ou lève une erreur de vérification de signature —
+// sur Mac, la mise à jour reste manuelle via la page Releases.
+function checkForUpdates() {
+  if (!app.isPackaged || process.platform === 'darwin') return;
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    console.error('autoUpdater error:', err);
+  });
+}
+
 if (gotLock) {
   app.on('second-instance', () => {
     const win = BrowserWindow.getAllWindows()[0];
@@ -125,6 +141,7 @@ if (gotLock) {
     require('../server.js');
 
     createWindow();
+    checkForUpdates();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

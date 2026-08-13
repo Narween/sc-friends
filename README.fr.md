@@ -205,6 +205,14 @@ de configuration standard du système (`%APPDATA%` sur Windows, `~/Library/
 Application Support` sur macOS, `~/.config` sur Linux), pas dans le dossier
 d'installation.
 
+**Mise à jour automatique (Windows/Linux uniquement)** : au lancement,
+l'appli vérifie le flux des GitHub Releases via `electron-updater` et
+installe les nouvelles versions en arrière-plan, avec une notification
+système une fois prête. **Indisponible sur macOS** — Squirrel.Mac (le
+mécanisme de mise à jour d'Electron sur macOS) exige une app signée, ce que
+ce projet n'a pas (voir la note sur les installeurs non signés plus bas) ;
+sur Mac, la mise à jour reste manuelle via la page Releases, comme avant.
+
 ### Télécharger un installeur (recommandé)
 
 👉 **[Dernière version dans l'onglet Releases](https://github.com/Narween/sc-friends/releases/latest)**

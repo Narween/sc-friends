@@ -46,10 +46,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sc-friends-${{ matrix.os }}
+          # *.yml (latest.yml, latest-linux.yml) et *.blockmap : métadonnées
+          # d'update lues par electron-updater (voir electron/main.js) —
+          # sans elles publiées à côté des installeurs sur la Release,
+          # l'auto-update Windows/Linux ne trouve jamais de nouvelle version.
           path: |
             dist-electron/*.exe
             dist-electron/*.dmg
             dist-electron/*.AppImage
+            dist-electron/*.yml
+            dist-electron/*.blockmap
           if-no-files-found: ignore
 
   release:

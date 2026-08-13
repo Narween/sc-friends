@@ -200,6 +200,14 @@ The same tool, packaged as a real desktop app (`.exe` / `.dmg` /
 config directory (`%APPDATA%` on Windows, `~/Library/Application Support` on
 macOS, `~/.config` on Linux), not in the install directory.
 
+**Auto-update (Windows/Linux only)**: on launch, the app checks the GitHub
+Releases feed via `electron-updater` and installs newer versions in the
+background, with a system notification once ready. **Not available on
+macOS** — Squirrel.Mac (Electron's macOS update mechanism) requires a
+code-signed app, which this project doesn't have (see the unsigned-installer
+note below); Mac users update manually via the Releases page, same as
+before.
+
 ### Download an installer (recommended)
 
 👉 **[Latest version in the Releases tab](https://github.com/Narween/sc-friends/releases/latest)**
