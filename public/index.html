@@ -107,6 +107,7 @@
   .actions button { padding: 4px 10px; font-size: 12px; }
   .actions button.active-keep { background: var(--keep); color: #06210f; border-color: var(--keep); }
   .actions button.active-remove { background: var(--remove); color: #310506; border-color: var(--remove); }
+  .actions button.active-undecided { background: var(--text-dim); color: #06202f; border-color: var(--text-dim); }
   .applied-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
   .applied-badge.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .applied-badge.fail { background: rgba(229,72,77,0.15); color: var(--remove); }
@@ -399,7 +400,7 @@ async function loadRows() {
       : `<div class="actions">
           <button data-id="${f.id}" data-set="keep" class="${f.decision === 'keep' ? 'active-keep' : ''}">${t('row.keep')}</button>
           <button data-id="${f.id}" data-set="remove" class="${f.decision === 'remove' ? 'active-remove' : ''}">${t('row.remove')}</button>
-          <button data-id="${f.id}" data-set="">${t('row.undecided')}</button>
+          <button data-id="${f.id}" data-set="" class="${f.decision === null ? 'active-undecided' : ''}">${t('row.undecided')}</button>
         </div>`;
     return `
       <tr class="${rowCls}">
