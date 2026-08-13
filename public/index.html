@@ -16,6 +16,7 @@
     --accent: #3fa9f5;
     --keep: #3fbf6b;
     --remove: #e5484d;
+    --undecided: #f0a030;
     --applied: #9a6bd6;
   }
   /* Thème clair : appliqué soit par préférence système ("auto", pas de
@@ -48,12 +49,13 @@
     flex-wrap: wrap;
   }
   h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .version-badge { font-size: 11px; font-weight: 400; color: var(--text-dim); }
   .summary { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); }
   .summary b { color: var(--text); }
   .pill { padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
   .pill.keep { background: rgba(63,191,107,0.15); color: var(--keep); }
   .pill.remove { background: rgba(229,72,77,0.15); color: var(--remove); }
-  .pill.undecided { background: rgba(127,146,163,0.15); color: var(--text-dim); }
+  .pill.undecided { background: rgba(240,160,48,0.15); color: var(--undecided); }
   .pill.applied { background: rgba(154,107,214,0.15); color: var(--applied); }
 
   .header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
@@ -79,6 +81,12 @@
     font-family: inherit;
   }
   input[type=text] { min-width: 220px; }
+  #backupBtn {
+    background: var(--bg-row); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 13px; text-decoration: none;
+    cursor: pointer;
+  }
+  #backupBtn:hover { border-color: var(--accent); }
   button { cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button:disabled { cursor: not-allowed; opacity: 0.6; }
@@ -103,11 +111,13 @@
   .status-online, .status-playing { background: var(--keep); }
   .status-away { background: #e5b800; }
   .status-offline { background: var(--text-dim); }
+  .notes-input { width: 160px; font-size: 12px; padding: 4px 6px; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+  .notes-input.saving { border-color: var(--accent); }
   .actions { display: flex; gap: 6px; }
   .actions button { padding: 4px 10px; font-size: 12px; }
   .actions button.active-keep { background: var(--keep); color: #06210f; border-color: var(--keep); }
   .actions button.active-remove { background: var(--remove); color: #310506; border-color: var(--remove); }
-  .actions button.active-undecided { background: var(--text-dim); color: #06202f; border-color: var(--text-dim); }
+  .actions button.active-undecided { background: var(--undecided); color: #2b1600; border-color: var(--undecided); }
   .applied-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
   .applied-badge.ok { background: rgba(63,191,107,0.15); color: var(--keep); }
   .applied-badge.fail { background: rgba(229,72,77,0.15); color: var(--remove); }
@@ -142,7 +152,7 @@
 <body>
 
 <header>
-  <h1>sc-friends</h1>
+  <h1>SC-Friends <span id="appVersion" class="version-badge"></span></h1>
   <div class="summary" id="summary">…</div>
   <div class="header-actions">
     <div class="lang-switch" id="langSwitch"><!-- boutons générés dynamiquement depuis /api/languages --></div>
@@ -153,6 +163,7 @@
     </div>
     <button id="toggleSetup" data-i18n="setup.toggle"></button>
     <button id="toggleAbout" data-i18n="about.toggle"></button>
+    <a id="backupBtn" href="/api/backup" download data-i18n="backup.button"></a>
   </div>
 </header>
 
@@ -228,6 +239,22 @@
 </div>
 
 <main>
+  <div class="pagination">
+    <button class="prevPageBtn" data-i18n="pagination.prev"></button>
+    <span class="pageInfo"></span>
+    <button class="nextPageBtn" data-i18n="pagination.next"></button>
+    <select class="pageSizeSelect">
+      <option value="10">10</option>
+      <option value="25">25</option>
+      <option value="50" selected>50</option>
+      <option value="100">100</option>
+      <option value="200">200</option>
+      <option value="300">300</option>
+      <option value="400">400</option>
+      <option value="all" data-i18n="pagination.all"></option>
+    </select>
+  </div>
+
   <div class="table-scroll">
   <table>
     <thead>
@@ -236,6 +263,7 @@
         <th data-i18n="table.status"></th>
         <th data-i18n="table.lastSeen"></th>
         <th data-i18n="table.orgs"></th>
+        <th data-i18n="table.notes"></th>
         <th data-i18n="table.decision"></th>
       </tr>
     </thead>
@@ -244,10 +272,10 @@
   </div>
 
   <div class="pagination">
-    <button id="prevPage" data-i18n="pagination.prev"></button>
-    <span id="pageInfo"></span>
-    <button id="nextPage" data-i18n="pagination.next"></button>
-    <select id="pageSize">
+    <button class="prevPageBtn" data-i18n="pagination.prev"></button>
+    <span class="pageInfo"></span>
+    <button class="nextPageBtn" data-i18n="pagination.next"></button>
+    <select class="pageSizeSelect">
       <option value="10">10</option>
       <option value="25">25</option>
       <option value="50" selected>50</option>
@@ -388,9 +416,10 @@ async function loadRows() {
   el('matchCount').textContent = t('unit.matches', { n: total });
   const showAll = state.pageSize === 'all';
   const totalPages = showAll ? 1 : Math.max(1, Math.ceil(total / state.pageSize));
-  el('pageInfo').textContent = t('unit.page', { p: showAll ? 1 : state.page, tot: totalPages, total });
-  el('prevPage').disabled = showAll || state.page <= 1;
-  el('nextPage').disabled = showAll || state.page >= totalPages;
+  document.querySelectorAll('.pageInfo').forEach((elm) => { elm.textContent = t('unit.page', { p: showAll ? 1 : state.page, tot: totalPages, total }); });
+  document.querySelectorAll('.prevPageBtn').forEach((elm) => { elm.disabled = showAll || state.page <= 1; });
+  document.querySelectorAll('.nextPageBtn').forEach((elm) => { elm.disabled = showAll || state.page >= totalPages; });
+  document.querySelectorAll('.pageSizeSelect').forEach((elm) => { elm.value = state.pageSize; });
 
   el('rows').innerHTML = rows.map((f) => {
     const applied = !!f.applied_at;
@@ -411,6 +440,7 @@ async function loadRows() {
         <td><span class="status-dot status-${f.presence_status || 'offline'}"></span>${f.presence_status || '?'}</td>
         <td>${fmtDate(f.presence_since)}</td>
         <td>${f.common_communities_count}</td>
+        <td><input type="text" class="notes-input" data-id="${f.id}" value="${escapeHtml(f.notes || '')}" placeholder="${escapeHtml(t('row.notesPlaceholder'))}"></td>
         <td>${badge}</td>
       </tr>`;
   }).join('');
@@ -427,6 +457,18 @@ async function loadRows() {
       loadSummary();
     });
   });
+
+  el('rows').querySelectorAll('.notes-input').forEach((input) => {
+    input.addEventListener('input', debounce(async () => {
+      const id = input.dataset.id;
+      input.classList.add('saving');
+      await fetch(`/api/friends/${encodeURIComponent(id)}/notes`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: input.value }),
+      });
+      input.classList.remove('saving');
+    }, 500));
+  });
 }
 
 function escapeHtml(s) {
@@ -442,13 +484,18 @@ el('orderBtn').addEventListener('click', () => {
   el('orderBtn').textContent = state.order === 'asc' ? '↑ asc' : '↓ desc';
   loadRows();
 });
-el('prevPage').addEventListener('click', () => { if (state.page > 1) { state.page--; loadRows(); } });
-el('nextPage').addEventListener('click', () => { state.page++; loadRows(); });
-el('pageSize').addEventListener('change', () => {
-  const v = el('pageSize').value;
-  state.pageSize = v === 'all' ? 'all' : parseInt(v, 10);
-  state.page = 1;
-  loadRows();
+document.querySelectorAll('.prevPageBtn').forEach((btn) => {
+  btn.addEventListener('click', () => { if (state.page > 1) { state.page--; loadRows(); } });
+});
+document.querySelectorAll('.nextPageBtn').forEach((btn) => {
+  btn.addEventListener('click', () => { state.page++; loadRows(); });
+});
+document.querySelectorAll('.pageSizeSelect').forEach((sel) => {
+  sel.addEventListener('change', () => {
+    state.pageSize = sel.value === 'all' ? 'all' : parseInt(sel.value, 10);
+    state.page = 1;
+    loadRows();
+  });
 });
 
 async function bulkSet(setTo) {
@@ -580,6 +627,10 @@ el('applyBtn').addEventListener('click', () => {
 
   const isEmpty = await loadStatus();
   if (isEmpty) el('setupPanel').style.display = 'block';
+
+  aboutData = await (await fetch('/api/about')).json();
+  document.title = `SC-Friends v${aboutData.version}`;
+  el('appVersion').textContent = `v${aboutData.version}`;
 })();
 </script>
 </body>

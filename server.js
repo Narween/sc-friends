@@ -4,6 +4,7 @@
 // direct par SSE. Écoute en local uniquement (127.0.0.1).
 const http = require('node:http');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { getDb } = require('./lib/db');
@@ -43,8 +44,8 @@ function buildWhere(db_, { search, decision, status }) {
   const conditions = [];
   const params = [];
   if (search) {
-    conditions.push(`(nickname LIKE ? OR displayname LIKE ?)`);
-    params.push(`%${search}%`, `%${search}%`);
+    conditions.push(`(nickname LIKE ? OR displayname LIKE ? OR notes LIKE ?)`);
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (decision === 'keep' || decision === 'remove') {
     conditions.push(`decision=?`);
@@ -137,6 +138,31 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/backup') {
+    // db.backup() (better-sqlite3's own online-backup API) rather than just
+    // streaming DB_FILE directly: with WAL mode on, the on-disk file alone
+    // can be missing recently-committed data still sitting in the -wal file,
+    // so a raw copy risks a subtly incomplete snapshot.
+    const tmpPath = path.join(os.tmpdir(), `sc-friends-backup-${Date.now()}.db`);
+    try {
+      await getDb().backup(tmpPath);
+      const stat = fs.statSync(tmpPath);
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="sc-friends-backup-${stamp}.db"`,
+      });
+      const stream = fs.createReadStream(tmpPath);
+      stream.pipe(res);
+      stream.on('close', () => fs.unlink(tmpPath, () => {}));
+    } catch (e) {
+      fs.unlink(tmpPath, () => {});
+      return sendJson(res, 500, { error: String(e) });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/status') {
     function fileInfo(p) {
       try {
@@ -188,7 +214,7 @@ const server = http.createServer(async (req, res) => {
     const total = db.prepare(`SELECT COUNT(*) as n FROM friends ${where};`).get(...params).n;
     const rows = db
       .prepare(
-        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, decision, applied_at, apply_success
+        `SELECT id, nickname, displayname, avatar, presence_status, presence_since, common_communities_count, decision, applied_at, apply_success, notes
          FROM friends ${where}
          ORDER BY ${sort} ${order} NULLS LAST
          LIMIT ? OFFSET ?;`
@@ -204,6 +230,18 @@ const server = http.createServer(async (req, res) => {
     getDb()
       .prepare(`UPDATE friends SET decision=?, decided_at=? WHERE id=? AND applied_at IS NULL;`)
       .run(decision, decision === null ? null : new Date().toISOString(), id);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === 'POST' && /^\/api\/friends\/[^/]+\/notes$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split('/')[3]);
+    const { notes } = await readBody(req);
+    if (typeof notes !== 'string' || notes.length > 2000) {
+      return sendJson(res, 400, { error: 'invalid notes' });
+    }
+    getDb()
+      .prepare(`UPDATE friends SET notes=? WHERE id=?;`)
+      .run(notes === '' ? null : notes, id);
     return sendJson(res, 200, { ok: true });
   }
 

@@ -1,6 +1,7 @@
 {
   "setup.toggle": "⚙ Populate database",
   "about.toggle": "ℹ About",
+  "backup.button": "Backup database",
   "about.title": "About sc-friends",
   "about.disclaimer": "Unofficial tool, not affiliated with Cloud Imperium Games / Roberts Space Industries in any way. Provided as-is, use at your own risk — removing a friend stays visible to that person.",
   "about.referral": "Made by Warween. If this tool was useful to you and you don't play Star Citizen yet, use my referral code {code} when creating your account — we both get a starting credits (UEC) bonus 🚀",
@@ -36,6 +37,7 @@
   "table.status": "Status",
   "table.lastSeen": "Last seen",
   "table.orgs": "Common orgs",
+  "table.notes": "Notes",
   "table.decision": "Decision",
   "pagination.prev": "← Previous",
   "pagination.next": "Next →",
@@ -48,6 +50,7 @@
   "row.keep": "Keep",
   "row.remove": "Remove",
   "row.undecided": "Undecided",
+  "row.notesPlaceholder": "Free-text note…",
   "row.appliedOk": "Applied ✓",
   "row.appliedFail": "Failed ✗",
   "row.unknown": "unknown",

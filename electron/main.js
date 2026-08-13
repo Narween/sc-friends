@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const PORT = 3939;
 const APP_ORIGIN = `http://127.0.0.1:${PORT}`;
+const PKG_VERSION = require('../package.json').version;
 
 // Filet de sécurité : sans ça, une exception non attrapée dans le process
 // principal fait apparaître la boîte de dialogue de crash générique
@@ -63,7 +64,7 @@ function createWindow() {
     // En dessous, le tableau/toolbar tronque ou superpose ses éléments.
     minWidth: 1050,
     minHeight: 650,
-    title: 'sc-friends',
+    title: `SC-Friends v${PKG_VERSION}`,
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
