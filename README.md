@@ -1,6 +1,6 @@
 *[Version française](README.fr.md)*
 
-[![ko-fi](https://storage.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/narween)
+<a href="https://ko-fi.com/narween"><img src="https://storage.ko-fi.com/cdn/kofi3.png?v=3" height="32" alt="ko-fi"></a>
 *Free tool, made on my own time — a coffee is always appreciated.*
 
 # sc-friends
