@@ -111,6 +111,17 @@ function runScript(name, body = {}) {
   });
 }
 
+// Un seul script à la fois pilote un vrai navigateur Playwright contre
+// Spectrum (login/fetch/apply — import est pur SQLite mais reste dans le
+// même verrou par simplicité). Sans ça, l'auto-refresh pourrait démarrer un
+// fetch pendant qu'une vraie suppression (apply) tourne déjà : deux sessions
+// Playwright simultanées sur le même compte RSI, exactement le genre de
+// comportement qui ressemble à du scraping abusif aux yeux d'une détection
+// anti-bot.
+function anyTaskRunning(exceptName) {
+  return Object.keys(TASKS).some((name) => name !== exceptName && getTaskState(name).running);
+}
+
 // --- Auto-refresh : relance fetch puis import à intervalle régulier, sans
 // action manuelle. Désactivé par défaut. Nécessite une session déjà
 // sauvegardée (auth.json) — jamais d'ouverture automatique du navigateur de
@@ -119,7 +130,7 @@ let autoRefreshTimer = null;
 
 async function runAutoRefresh() {
   if (!fs.existsSync(AUTH_FILE)) return;
-  if (getTaskState('fetch').running || getTaskState('import').running) return;
+  if (anyTaskRunning()) return;
   lockTask('fetch');
   const fetchCode = await runScript('fetch');
   if (fetchCode !== 0) return;
@@ -456,7 +467,7 @@ const server = http.createServer(async (req, res) => {
     const task = TASKS[name];
     if (!task) return sendJson(res, 404, { error: 'unknown task' });
     const st = getTaskState(name);
-    if (st.running) return sendJson(res, 409, { error: 'already running' });
+    if (st.running || anyTaskRunning(name)) return sendJson(res, 409, { error: 'already running' });
     lockTask(name);
     const body = await readBody(req);
     runScript(name, body); // fire-and-forget: la progression passe par SSE (/api/run/:name/events)

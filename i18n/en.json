@@ -6,6 +6,8 @@
   "about.title": "About sc-friends",
   "about.disclaimer": "Unofficial tool, not affiliated with Cloud Imperium Games / Roberts Space Industries in any way. Provided as-is, use at your own risk — removing a friend stays visible to that person.",
   "about.referral": "Made by Warween. If this tool was useful to you and you don't play Star Citizen yet, use my referral code {code} when creating your account — we both get a starting credits (UEC) bonus 🚀",
+  "about.kofiText": "This tool is free and made on my own time. If it saved you some, a coffee is always appreciated.",
+  "about.kofi": "Buy me a coffee on Ko-fi",
   "setup.title": "How to populate / refresh friends.db",
   "setup.intro": "Each step runs a real script. Step 1 opens a real browser: log in normally (2FA included), then click \"I'm logged in\".",
   "setup.step1.title": "Log in to Spectrum",

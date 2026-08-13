@@ -1,5 +1,8 @@
 *[English version](README.md)*
 
+[![ko-fi](https://storage.ko-fi.com/cdn/kofi3.png?v=3)](https://ko-fi.com/narween)
+*Outil gratuit, développé sur mon temps libre — un café fait toujours plaisir.*
+
 # sc-friends
 
 **Fait le ménage dans ta liste d'amis [Spectrum](https://robertsspaceindustries.com/spectrum)**
