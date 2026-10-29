@@ -106,9 +106,55 @@ function createWindow() {
 // macOS est volontairement exclu : Squirrel.Mac (le mécanisme d'update
 // d'Electron sur macOS) exige une app signée, et une app non signée y
 // échoue silencieusement ou lève une erreur de vérification de signature —
-// sur Mac, la mise à jour reste manuelle via la page Releases.
+// sur Mac, on se contente de prévenir qu'une nouvelle version existe et
+// d'ouvrir la page de la Release (voir checkForUpdatesMac).
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const RELEASES_API = 'https://api.github.com/repos/Narween/sc-friends/releases/latest';
+
+// "1.0.14" > "1.0.9" : comparaison numérique champ par champ, un éventuel
+// "v" de tête (nom de tag) ignoré.
+function isNewer(remote, local) {
+  const a = remote.replace(/^v/, '').split('.').map(Number);
+  const b = local.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
+
+// Version déjà signalée pendant cette session : sans ça, la vérification
+// toutes les 6 h reposerait la même question à chaque fois.
+let macNotifiedVersion = null;
+
+async function checkForUpdatesMac() {
+  try {
+    const res = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!res.ok) return;
+    const rel = await res.json();
+    if (!rel.tag_name || rel.draft || rel.prerelease) return;
+    if (!isNewer(rel.tag_name, app.getVersion()) || macNotifiedVersion === rel.tag_name) return;
+    macNotifiedVersion = rel.tag_name;
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      buttons: ['Télécharger / Download', 'Plus tard / Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'SC-Friends',
+      message: `Nouvelle version disponible : ${rel.tag_name}\nNew version available: ${rel.tag_name}`,
+      detail: `Version installée / installed: ${app.getVersion()}`,
+    });
+    if (response === 0) shell.openExternal(rel.html_url);
+  } catch (err) {
+    console.error('update check (mac) error:', err);
+  }
+}
+
 function checkForUpdates() {
-  if (!app.isPackaged || process.platform === 'darwin') return;
+  if (!app.isPackaged) return;
+  if (process.platform === 'darwin') {
+    checkForUpdatesMac();
+    return;
+  }
   autoUpdater.checkForUpdatesAndNotify().catch((err) => {
     console.error('autoUpdater error:', err);
   });
@@ -142,6 +188,9 @@ if (gotLock) {
 
     createWindow();
     checkForUpdates();
+    // Appli souvent laissée ouverte longtemps : on revérifie régulièrement,
+    // pas seulement au démarrage.
+    setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL_MS);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
